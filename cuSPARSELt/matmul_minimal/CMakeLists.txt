@@ -48,7 +48,7 @@ cmake_minimum_required(VERSION 3.9)
 
 set(ROUTINE matmul_minimal)
 
-project("${ROUTINE}_minimal_example"
+project("${ROUTINE}_example"
         DESCRIPTION  "cuSPARSELt"
         HOMEPAGE_URL "https://docs.nvidia.com/cuda/cusparselt/index.html"
         LANGUAGES    CXX CUDA)
@@ -70,35 +70,35 @@ elseif (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64" AND
 endif()
 set(NVRTC_SHARED ${CUDA_TOOLKIT_PATH}/targets/${OS_ARCH_NVRTC}/lib/libnvrtc.so)
 
-add_executable(${ROUTINE}_minimal_example)
-add_executable(${ROUTINE}_minimal_example_static)
+add_executable(${ROUTINE}_example)
+add_executable(${ROUTINE}_example_static)
 
-target_sources(${ROUTINE}_minimal_example
-    PUBLIC ${PROJECT_SOURCE_DIR}/${ROUTINE}_minimal_example.cpp
+target_sources(${ROUTINE}_example
+    PUBLIC ${PROJECT_SOURCE_DIR}/${ROUTINE}_example.cpp
 )
 
-target_sources(${ROUTINE}_minimal_example_static
-    PUBLIC ${PROJECT_SOURCE_DIR}/${ROUTINE}_minimal_example.cpp
+target_sources(${ROUTINE}_example_static
+    PUBLIC ${PROJECT_SOURCE_DIR}/${ROUTINE}_example.cpp
 )
 
-target_include_directories(${ROUTINE}_minimal_example
+target_include_directories(${ROUTINE}_example
     PUBLIC ${CUDA_TOOLKIT_PATH}/include
     PUBLIC ${CUSPARSELT_PATH}/include
 )
 
-target_include_directories(${ROUTINE}_minimal_example_static
+target_include_directories(${ROUTINE}_example_static
     PUBLIC ${CUDA_TOOLKIT_PATH}/include
     PUBLIC ${CUSPARSELT_PATH}/include
 )
 
-target_link_libraries(${ROUTINE}_minimal_example
+target_link_libraries(${ROUTINE}_example
     PUBLIC cudart
     PUBLIC cusparse
     PUBLIC ${CUSPARSELT_PATH}/lib64/libcusparseLt.so
     PUBLIC ${NVRTC_SHARED}
 )
 
-target_link_libraries(${ROUTINE}_minimal_example_static
+target_link_libraries(${ROUTINE}_example_static
     PUBLIC cudart
     PUBLIC cusparse
     PUBLIC ${CUSPARSELT_PATH}/lib64/libcusparseLt_static.a
