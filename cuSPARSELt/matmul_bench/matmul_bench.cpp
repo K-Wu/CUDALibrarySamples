@@ -133,9 +133,10 @@ int main(const int argc, const char** argv) {
   auto A_size = A_height * lda * sizeof(__half);
   auto B_size = B_height * ldb * sizeof(__half);
   auto C_size = C_height * ldc * sizeof(__half);
-  __half hA[m * k];
-  __half hB[k * n];
-  __half hC[m * n] = {};
+
+  __half* hA = (__half*)malloc(m * k * sizeof(__half));
+  __half* hB = (__half*)malloc(k * n * sizeof(__half));
+  __half* hC = (__half*)malloc(m * n * sizeof(__half));
   for (int i = 0; i < m * k; i++)
     hA[i] = static_cast<__half>(static_cast<float>(std::rand() % 10));
   for (int i = 0; i < k * n; i++)
@@ -168,8 +169,6 @@ int main(const int argc, const char** argv) {
   CHECK_CUDA(cudaEventCreate(&after_workspace_alloc))
   CHECK_CUDA(cudaEventCreate(&after_execution))
   CHECK_CUDA(cudaEventCreate(&after_destruction))
-
-
 
   //--------------------------------------------------------------------------
   cusparseLtHandle_t handle;
@@ -289,10 +288,10 @@ int main(const int argc, const char** argv) {
                                   after_compression))
   CHECK_CUDA(
       cudaEventElapsedTime(&time_tuning, after_compression, after_tuning))
-CHECK_CUDA(
-      cudaEventElapsedTime(&time_workspace_alloc, after_tuning, after_workspace_alloc))
-  CHECK_CUDA(
-      cudaEventElapsedTime(&time_execution, after_workspace_alloc, after_execution))
+  CHECK_CUDA(cudaEventElapsedTime(&time_workspace_alloc, after_tuning,
+                                  after_workspace_alloc))
+  CHECK_CUDA(cudaEventElapsedTime(&time_execution, after_workspace_alloc,
+                                  after_execution))
   CHECK_CUDA(cudaEventElapsedTime(&time_destruction, after_execution,
                                   after_destruction))
 
@@ -302,10 +301,9 @@ CHECK_CUDA(
   printf("  verification: %f ms\n", time_verification);
   printf("  compression: %f ms\n", time_compression);
   printf("  tuning: %f ms\n", time_tuning);
-  
-  
+
   printf("  workspace allocation: %f ms\n", time_workspace_alloc);
-  
+
   printf("  execution: %f ms\n", time_execution);
   printf("  destruction: %f ms\n", time_destruction);
   printf("  total: %f ms\n", time_handle_creation + time_pruning +
@@ -363,5 +361,10 @@ CHECK_CUDA(
   CHECK_CUDA(cudaFree(d_valid))
   CHECK_CUDA(cudaFree(d_workspace))
   CHECK_CUDA(cudaFree(dA_compressedBuffer))
+
+  // host memory deallocation
+  free(hA);
+  free(hB);
+  free(hC);
   return EXIT_SUCCESS;
 }
