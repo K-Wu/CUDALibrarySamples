@@ -158,19 +158,18 @@ int main(const int argc, const char** argv) {
 
   cudaEvent_t before_handle_creation, after_handle_creation, after_pruning,
       after_verification, after_compression, after_tuning, after_execution,
-      after_destruction;
+      after_destruction, after_workspace_alloc;
   CHECK_CUDA(cudaEventCreate(&before_handle_creation))
   CHECK_CUDA(cudaEventCreate(&after_handle_creation))
   CHECK_CUDA(cudaEventCreate(&after_pruning))
   CHECK_CUDA(cudaEventCreate(&after_verification))
   CHECK_CUDA(cudaEventCreate(&after_compression))
   CHECK_CUDA(cudaEventCreate(&after_tuning))
+  CHECK_CUDA(cudaEventCreate(&after_workspace_alloc))
   CHECK_CUDA(cudaEventCreate(&after_execution))
   CHECK_CUDA(cudaEventCreate(&after_destruction))
 
-  CHECK_CUDA(cudaDeviceSynchronize())
 
-  CHECK_CUDA(cudaEventRecord(before_handle_creation))
 
   //--------------------------------------------------------------------------
   cusparseLtHandle_t handle;
@@ -179,6 +178,9 @@ int main(const int argc, const char** argv) {
   cusparseLtMatmulAlgSelection_t alg_sel;
   cusparseLtMatmulPlan_t plan;
   cudaStream_t stream = nullptr;
+
+  CHECK_CUDA(cudaDeviceSynchronize())
+  CHECK_CUDA(cudaEventRecord(before_handle_creation))
   CHECK_CUSPARSE(cusparseLtInit(&handle))
   // matrix descriptor initialization
   CHECK_CUSPARSE(cusparseLtStructuredDescriptorInit(
@@ -229,7 +231,6 @@ int main(const int argc, const char** argv) {
 
   CHECK_CUSPARSE(cusparseLtSpMMACompress(&handle, &plan, dA, dA_compressed,
                                          dA_compressedBuffer, stream))
-
   CHECK_CUDA(cudaEventRecord(after_compression))
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search the best kernel
@@ -254,6 +255,8 @@ int main(const int argc, const char** argv) {
   void* d_workspace;
   CHECK_CUDA(cudaMalloc((void**)&d_workspace, workspace_size))
 
+  CHECK_CUDA(cudaEventRecord(after_workspace_alloc))
+
   // Perform the matrix multiplication
   CHECK_CUSPARSE(cusparseLtMatmul(&handle, &plan, &alpha, dA_compressed, dB,
                                   &beta, dC, dD, d_workspace, streams,
@@ -273,7 +276,7 @@ int main(const int argc, const char** argv) {
   CHECK_CUDA(cudaDeviceSynchronize())
 
   float time_handle_creation, time_pruning, time_verification, time_compression,
-      time_tuning, time_execution, time_destruction;
+      time_tuning, time_workspace_alloc, time_execution, time_destruction;
 
   CHECK_CUDA(cudaEventElapsedTime(&time_handle_creation, before_handle_creation,
                                   after_handle_creation))
@@ -286,8 +289,10 @@ int main(const int argc, const char** argv) {
                                   after_compression))
   CHECK_CUDA(
       cudaEventElapsedTime(&time_tuning, after_compression, after_tuning))
+CHECK_CUDA(
+      cudaEventElapsedTime(&time_workspace_alloc, after_tuning, after_workspace_alloc))
   CHECK_CUDA(
-      cudaEventElapsedTime(&time_execution, after_tuning, after_execution))
+      cudaEventElapsedTime(&time_execution, after_workspace_alloc, after_execution))
   CHECK_CUDA(cudaEventElapsedTime(&time_destruction, after_execution,
                                   after_destruction))
 
@@ -297,6 +302,10 @@ int main(const int argc, const char** argv) {
   printf("  verification: %f ms\n", time_verification);
   printf("  compression: %f ms\n", time_compression);
   printf("  tuning: %f ms\n", time_tuning);
+  
+  
+  printf("  workspace allocation: %f ms\n", time_workspace_alloc);
+  
   printf("  execution: %f ms\n", time_execution);
   printf("  destruction: %f ms\n", time_destruction);
   printf("  total: %f ms\n", time_handle_creation + time_pruning +

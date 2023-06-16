@@ -49,10 +49,11 @@ def extract_cusparselt_result(txt_file):
             verification_time,
             compression_time,
             tuning_time,
+            workspace_time,
             execution_time,
             destruction_time,
             total_time,
-        ) = (None, None, None, None, None, None, None, None)
+        ) = (None, None, None, None, None, None, None, None, None)
         status = "RuntimeError"
         num_line = 0
         for line in fd:
@@ -67,6 +68,8 @@ def extract_cusparselt_result(txt_file):
                 compression_time = line.split(":")[1].strip().split()[0]
             elif line.find("tuning:") != -1:
                 tuning_time = line.split(":")[1].strip().split()[0]
+            elif line.find("workspace allocation:") !=-1:
+                workspace_time = line.split(":")[1].strip().split()[0]
             elif line.find("execution:") != -1:
                 execution_time = line.split(":")[1].strip().split()[0]
             elif line.find("destruction:") != -1:
@@ -85,6 +88,7 @@ def extract_cusparselt_result(txt_file):
             verification_time,
             compression_time,
             tuning_time,
+            workspace_time,
             execution_time,
             destruction_time,
             total_time,
@@ -142,6 +146,7 @@ if __name__ == "__main__":
                 "verify(ms)",
                 "compress(ms)",
                 "tune(ms)",
+                "workspace alloc(ms)",
                 "execute(ms)",
                 "destroy handle(ms)",
                 "total time(ms)",
