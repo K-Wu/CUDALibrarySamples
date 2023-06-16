@@ -47,142 +47,151 @@
  * Users Notice.
  */
 
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <ctime>
-#include <algorithm>
-
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
+#include <utils/generate_random_data.h>
+#include <utils/helper_string.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <vector>
 
 #include "cublas_utils.h"
-#include <utils/helper_string.h>
-#include <utils/generate_random_data.h>
-#include <chrono>
 
 using data_type = float;
 
 int main(const int argc, const char *argv[]) {
-    cublasHandle_t cublasH = NULL;
-    cudaStream_t stream = NULL;
+  cublasHandle_t cublasH = NULL;
+  cudaStream_t stream = NULL;
 
-    // const int m = 2;
-    // const int n = 2;
-    // const int k = 2;
-    // const int lda = 2;
-    // const int ldb = 2;
-    // const int ldc = 2;
+  // const int m = 2;
+  // const int n = 2;
+  // const int k = 2;
+  // const int lda = 2;
+  // const int ldb = 2;
+  // const int ldc = 2;
 
-    // Host problem definition
-    int m = getCmdLineArgumentInt(argc, argv, "m");
-    int n = getCmdLineArgumentInt(argc, argv, "n");
-    int k = getCmdLineArgumentInt(argc, argv, "k");
-    if (argc != 4){
-        printf("Usage: %s --m=## --n=## --k=##\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-    int lda = m;
-    int ldb = k;
-    int ldc = m;
-    /*
-     *   A = | 1.0 | 2.0 |
-     *       | 3.0 | 4.0 |
-     *
-     *   B = | 5.0 | 6.0 |
-     *       | 7.0 | 8.0 |
-     */
+  // Host problem definition
+  int m = getCmdLineArgumentInt(argc, argv, "m");
+  int n = getCmdLineArgumentInt(argc, argv, "n");
+  int k = getCmdLineArgumentInt(argc, argv, "k");
+  if (argc != 4) {
+    printf("Usage: %s --m=## --n=## --k=##\n", argv[0]);
+    return EXIT_FAILURE;
+  }
+  int lda = m;
+  int ldb = k;
+  int ldc = m;
+  /*
+   *   A = | 1.0 | 2.0 |
+   *       | 3.0 | 4.0 |
+   *
+   *   B = | 5.0 | 6.0 |
+   *       | 7.0 | 8.0 |
+   */
 
-    std::srand(unsigned(std::time(nullptr)));
-    std::vector<data_type> A(lda*k);
-    std::vector<data_type> B(ldb*n);
-    std::generate(A.begin(), A.end(), std::rand);
-    std::generate(B.begin(), B.end(), std::rand);
-    //const std::vector<data_type> A = {1.0, 2.0, 3.0, 4.0};
-    //const std::vector<data_type> B = {5.0, 6.0, 7.0, 8.0};
-    std::vector<data_type> C(m * n);
-    const data_type alpha = 1.0;
-    const data_type beta = 0.0;
+  std::srand(unsigned(std::time(nullptr)));
+  std::vector<data_type> A(lda * k);
+  std::vector<data_type> B(ldb * n);
+  std::generate(A.begin(), A.end(), std::rand);
+  std::generate(B.begin(), B.end(), std::rand);
+  // const std::vector<data_type> A = {1.0, 2.0, 3.0, 4.0};
+  // const std::vector<data_type> B = {5.0, 6.0, 7.0, 8.0};
+  std::vector<data_type> C(m * n);
+  const data_type alpha = 1.0;
+  const data_type beta = 0.0;
 
-    data_type *d_A = nullptr;
-    data_type *d_B = nullptr;
-    data_type *d_C = nullptr;
+  data_type *d_A = nullptr;
+  data_type *d_B = nullptr;
+  data_type *d_C = nullptr;
 
-    cublasOperation_t transa = CUBLAS_OP_N;
-    cublasOperation_t transb = CUBLAS_OP_N;
+  cublasOperation_t transa = CUBLAS_OP_N;
+  cublasOperation_t transb = CUBLAS_OP_N;
 
-    if (0){
-        printf("A\n");
-        print_matrix(m, k, A.data(), lda);
-        printf("=====\n");
+  if (0) {
+    printf("A\n");
+    print_matrix(m, k, A.data(), lda);
+    printf("=====\n");
 
-        printf("B\n");
-        print_matrix(k, n, B.data(), ldb);
-        printf("=====\n");
-    }
+    printf("B\n");
+    print_matrix(k, n, B.data(), ldb);
+    printf("=====\n");
+  }
 
-    /* step 1: create cublas handle, bind a stream */
-    CUBLAS_CHECK(cublasCreate(&cublasH));
+  /* step 1: create cublas handle, bind a stream */
+  CUBLAS_CHECK(cublasCreate(&cublasH));
 
-    CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
-    CUBLAS_CHECK(cublasSetStream(cublasH, stream));
+  CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  CUBLAS_CHECK(cublasSetStream(cublasH, stream));
 
-    /* step 2: copy data to device */
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(data_type) * A.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B), sizeof(data_type) * B.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C), sizeof(data_type) * C.size()));
+  /* step 2: copy data to device */
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A),
+                        sizeof(data_type) * A.size()));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B),
+                        sizeof(data_type) * B.size()));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C),
+                        sizeof(data_type) * C.size()));
 
-    CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(data_type) * A.size(), cudaMemcpyHostToDevice,
-                               stream));
-    CUDA_CHECK(cudaMemcpyAsync(d_B, B.data(), sizeof(data_type) * B.size(), cudaMemcpyHostToDevice,
-                               stream));
+  CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(data_type) * A.size(),
+                             cudaMemcpyHostToDevice, stream));
+  CUDA_CHECK(cudaMemcpyAsync(d_B, B.data(), sizeof(data_type) * B.size(),
+                             cudaMemcpyHostToDevice, stream));
 
-    /* step 3: compute */
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-    cudaDeviceSynchronize();
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    cudaDeviceSynchronize();
-    start = std::chrono::system_clock::now();
-    
- 
-    CUBLAS_CHECK(
-        cublasSgemm(cublasH, transa, transb, m, n, k, &alpha, d_A, lda, d_B, ldb, &beta, d_C, ldc));
+  /* step 3: compute */
+  // std::chrono::time_point<std::chrono::system_clock> start, end;
+  cudaEvent_t start, stop;
+  CUDA_CHECK(cudaEventCreate(&start));
+  CUDA_CHECK(cudaEventCreate(&stop));
 
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    cudaDeviceSynchronize();
-    end = std::chrono::system_clock::now();
-    printf("cublas<X>gemm time (microseconds): %ld\n",
-           std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-   
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+  CUDA_CHECK(cudaDeviceSynchronize());
 
+  CUDA_CHECK(cudaEventRecord(start, stream));
 
-    /* step 4: copy data to host */
-    CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(), cudaMemcpyDeviceToHost,
-                               stream));
+  CUBLAS_CHECK(cublasSgemm(cublasH, transa, transb, m, n, k, &alpha, d_A, lda,
+                           d_B, ldb, &beta, d_C, ldc));
+  CUDA_CHECK(cudaEventRecord(stop, stream));
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+  CUDA_CHECK(cudaDeviceSynchronize());
+  // end = std::chrono::system_clock::now();
+  float elapsed_time = 0.0f;
+  CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
+  printf("cublas<X>gemm time (ms): %f\n", elapsed_time);
+  // printf("cublas<X>gemm time (microseconds): %ld\n",
+  //        std::chrono::duration_cast<std::chrono::microseconds>(end -
+  //        start).count());
 
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+  /* step 4: copy data to host */
+  CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(),
+                             cudaMemcpyDeviceToHost, stream));
 
-    /*
-     *   C = | 23.0 | 31.0 |
-     *       | 34.0 | 46.0 |
-     */
+  CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    if (0){
-        printf("C\n");
-        print_matrix(m, n, C.data(), ldc);
-        printf("=====\n");
-    }
+  /*
+   *   C = | 23.0 | 31.0 |
+   *       | 34.0 | 46.0 |
+   */
 
-    /* free resources */
-    CUDA_CHECK(cudaFree(d_A));
-    CUDA_CHECK(cudaFree(d_B));
-    CUDA_CHECK(cudaFree(d_C));
+  if (0) {
+    printf("C\n");
+    print_matrix(m, n, C.data(), ldc);
+    printf("=====\n");
+  }
 
-    CUBLAS_CHECK(cublasDestroy(cublasH));
+  /* free resources */
+  CUDA_CHECK(cudaFree(d_A));
+  CUDA_CHECK(cudaFree(d_B));
+  CUDA_CHECK(cudaFree(d_C));
 
-    CUDA_CHECK(cudaStreamDestroy(stream));
+  CUBLAS_CHECK(cublasDestroy(cublasH));
 
-    CUDA_CHECK(cudaDeviceReset());
+  CUDA_CHECK(cudaStreamDestroy(stream));
 
-    return EXIT_SUCCESS;
+  CUDA_CHECK(cudaDeviceReset());
+
+  return EXIT_SUCCESS;
 }

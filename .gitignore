@@ -13,3 +13,7 @@ bench_spmm_csr
 !bench_spmm_csr/
 bench_spmm_csr_op
 !bench_spmm_csr_op/
+matmul_bench
+matmul_bench_static
+!matmul_bench/
+artifacts/
