@@ -3,9 +3,9 @@ import os
 
 def get_header(component_name):
     return f"""
-      OUTPUT_DIR="artifacts/benchmark_{component_name}_`date +%Y%m%d%H%M`"
-      mkdir -p $OUTPUT_DIR
-    """
+OUTPUT_DIR="artifacts/benchmark_{component_name}_`date +%Y%m%d%H%M`"
+mkdir -p $OUTPUT_DIR
+"""
 
 
 def gen_m_n_k(min, max):
