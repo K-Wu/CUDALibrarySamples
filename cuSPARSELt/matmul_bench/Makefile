@@ -56,7 +56,7 @@ ifeq ($(shell uname -s), Linux)
 endif
 endif
 NVRTC_SHARED := ${CUDA_TOOLKIT_PATH}/targets/${OS_ARCH_NVRTC}/lib/libnvrtc.so
-INCS         := -I$(CUDA_TOOLKIT_PATH)/include -I${CUSPARSELT_PATH}/include
+INCS         := -I$(CUDA_TOOLKIT_PATH)/include -I${CUSPARSELT_PATH}/include -I../../3rdparty/cusplibrary -I../../3rdparty/
 LIBS         := -lcusparse -ldl ${NVRTC_SHARED}
 
 ifndef CUSPARSELT_PATH

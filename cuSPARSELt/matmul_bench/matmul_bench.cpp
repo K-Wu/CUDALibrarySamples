@@ -48,6 +48,7 @@
  */
 #include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
 #include <cusparseLt.h>       // cusparseLt header
+#include <utils/helper_string.h>
 #include <cstdio>             // printf
 #include <cstdlib>            // std::rand
 
@@ -73,7 +74,7 @@
 
 constexpr int EXIT_UNSUPPORTED = 2;
 
-int main(void) {
+int main(const int argc, const char** argv) {
     int major_cc, minor_cc;
     CHECK_CUDA( cudaDeviceGetAttribute(&major_cc,
                                        cudaDevAttrComputeCapabilityMajor, 0) )
@@ -87,11 +88,23 @@ int main(void) {
                      major_cc, minor_cc);
         return EXIT_UNSUPPORTED;
     }
+    // CLI Input
+    int m = getCmdLineArgumentInt(argc, argv, "m");
+    int n = getCmdLineArgumentInt(argc, argv, "n");
+    int k = getCmdLineArgumentInt(argc, argv, "k");
+    if (argc != 4){
+        printf("Usage: %s --m=## --n=## --k=##\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    printf("m: %d\n", m);
+    printf("n: %d\n", n);
+    printf("k: %d\n", k);
+    // ***** END OF CLI Input *****
     // Host problem definition, row-major order
     // bigger sizes may require dynamic allocations
-    constexpr int m            = 32;
-    constexpr int n            = 32;
-    constexpr int k            = 32;
+    // constexpr int m            = 32;
+    // constexpr int n            = 32;
+    // constexpr int k            = 32;
     auto          order        = CUSPARSE_ORDER_ROW;
     auto          opA          = CUSPARSE_OPERATION_NON_TRANSPOSE;
     auto          opB          = CUSPARSE_OPERATION_NON_TRANSPOSE;
