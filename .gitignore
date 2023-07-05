@@ -16,4 +16,6 @@ bench_spmm_csr_op
 matmul_bench
 matmul_bench_static
 !matmul_bench/
+matmul_minimal_example_static
 artifacts/
+build/
