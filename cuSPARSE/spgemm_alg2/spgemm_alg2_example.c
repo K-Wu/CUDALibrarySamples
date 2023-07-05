@@ -140,7 +140,7 @@ int main(void) {
     cusparseSpGEMMAlg_t  alg    = CUSPARSE_SPGEMM_ALG2;
     cusparseHandle_t     handle = NULL;
     cusparseSpMatDescr_t matA, matB, matC;
-    int64_t              num_prods;
+    // int64_t              num_prods;
     float                chunk_fraction = 0.2;
     void*  dBuffer1    = NULL, *dBuffer2   = NULL, *dBuffer3   = NULL;
     size_t bufferSize1 = 0,    bufferSize2 = 0,    bufferSize3 = 0;
@@ -178,7 +178,7 @@ int main(void) {
                                         computeType, alg,
                                         spgemmDesc, &bufferSize1, dBuffer1) )
 
-    CHECK_CUSPARSE(cusparseSpGEMM_getNumProducts(spgemmDesc, &num_prods) )
+    // CHECK_CUSPARSE(cusparseSpGEMM_getNumProducts(spgemmDesc, &num_prods) )
 
     // ask bufferSize3 bytes for external memory
     CHECK_CUSPARSE(
