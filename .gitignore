@@ -19,3 +19,5 @@ matmul_bench_static
 matmul_minimal_example_static
 artifacts/
 build/
+bench_sddmm_csr_zerocopy
+!bench_sddmm_csr_zerocopy/
