@@ -161,6 +161,8 @@ int main(const int argc, const char *argv[]) {
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cublas<X>gemm time (ms): %f\n", elapsed_time);
+  printf("throughput (GFLOPS): %f\n",
+         (2.0 * m * n * k) / (elapsed_time / 1000.0) / 1e9);
   // printf("cublas<X>gemm time (microseconds): %ld\n",
   //        std::chrono::duration_cast<std::chrono::microseconds>(end -
   //        start).count());
