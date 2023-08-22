@@ -68,7 +68,7 @@ def extract_cusparselt_result(txt_file):
                 compression_time = line.split(":")[1].strip().split()[0]
             elif line.find("tuning:") != -1:
                 tuning_time = line.split(":")[1].strip().split()[0]
-            elif line.find("workspace allocation:") !=-1:
+            elif line.find("workspace allocation:") != -1:
                 workspace_time = line.split(":")[1].strip().split()[0]
             elif line.find("execution:") != -1:
                 execution_time = line.split(":")[1].strip().split()[0]
