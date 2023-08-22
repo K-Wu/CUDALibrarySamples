@@ -16,7 +16,12 @@ if __name__ == "__main__":
             continue
 
         # skip my code
-        if item.startswith("./bench_utils") or "/bench_" in item:
+        if (
+            item.startswith("./bench_utils")
+            or "/bench_" in item
+            or "cuSPARSELt/matmul_bench" in item
+            or "cuSPARSE/spgemm_reuse" in item
+        ):
             continue
 
         # no adding this directory if it is not the innermost directory
