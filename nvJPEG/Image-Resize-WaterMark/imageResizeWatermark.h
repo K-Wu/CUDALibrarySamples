@@ -26,48 +26,46 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <iostream>
+#include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <algorithm>
 
-#include <string.h>  // strcmpi
+#include <string.h> // strcmpi
 #ifndef _WIN64
-#include <sys/time.h>  // timings
+#include <sys/time.h> // timings
 #include <unistd.h>
 #endif
-#include <dirent.h>  
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-
 #include <cuda_runtime_api.h>
-#include <nvjpeg.h>
-#include <nppi_geometry_transforms.h>
 #include <nppi_arithmetic_and_logical_operations.h>
+#include <nppi_geometry_transforms.h>
+#include <nvjpeg.h>
 
+#define CHECK_CUDA(call)                                                       \
+  {                                                                            \
+    cudaError_t _e = (call);                                                   \
+    if (_e != cudaSuccess) {                                                   \
+      std::cout << "CUDA Runtime failure: '#" << _e << "' at " << __FILE__     \
+                << ":" << __LINE__ << std::endl;                               \
+      exit(1);                                                                 \
+    }                                                                          \
+  }
 
-#define CHECK_CUDA(call)                                                        \
-    {                                                                           \
-        cudaError_t _e = (call);                                                \
-        if (_e != cudaSuccess)                                                  \
-        {                                                                       \
-            std::cout << "CUDA Runtime failure: '#" << _e << "' at " <<  __FILE__ << ":" << __LINE__ << std::endl;\
-            exit(1);                                                            \
-        }                                                                       \
-    }
-
-#define CHECK_NVJPEG(call)                                                      \
-    {                                                                           \
-        nvjpegStatus_t _e = (call);                                             \
-        if (_e != NVJPEG_STATUS_SUCCESS)                                        \
-        {                                                                       \
-            std::cout << "NVJPEG failure: '#" << _e << "' at " <<  __FILE__ << ":" << __LINE__ << std::endl;\
-            exit(1);                                                            \
-        }                                                                       \
-    }
+#define CHECK_NVJPEG(call)                                                     \
+  {                                                                            \
+    nvjpegStatus_t _e = (call);                                                \
+    if (_e != NVJPEG_STATUS_SUCCESS) {                                         \
+      std::cout << "NVJPEG failure: '#" << _e << "' at " << __FILE__ << ":"    \
+                << __LINE__ << std::endl;                                      \
+      exit(1);                                                                 \
+    }                                                                          \
+  }
 
 struct image_resize_params_t {
   std::string input_dir;
@@ -78,93 +76,67 @@ struct image_resize_params_t {
   int dev;
 };
 
-
 typedef struct {
-    NppiSize size;
-    nvjpegImage_t data;
+  NppiSize size;
+  nvjpegImage_t data;
 } image_t;
 
+int dev_malloc(void **p, size_t s) { return (int)cudaMalloc(p, s); }
 
-int dev_malloc(void** p, size_t s)
-{
-    return (int)cudaMalloc(p, s);
+int dev_free(void *p) { return (int)cudaFree(p); }
+
+bool is_interleaved(nvjpegOutputFormat_t format) {
+  if (format == NVJPEG_OUTPUT_RGBI || format == NVJPEG_OUTPUT_BGRI)
+    return true;
+  else
+    return false;
 }
-
-int dev_free(void* p)
-{
-    return (int)cudaFree(p);
-}
-
-bool is_interleaved(nvjpegOutputFormat_t format)
-{
-    if (format == NVJPEG_OUTPUT_RGBI || format == NVJPEG_OUTPUT_BGRI)
-        return true;
-    else
-        return false;
-}
-
 
 // *****************************************************************************
 // reading input directory to file list
 // -----------------------------------------------------------------------------
-int readInput(const std::string &sInputPath, std::vector<std::string> &filelist)
-{
-    int error_code = 1;
-    struct stat s;
+int readInput(const std::string &sInputPath,
+              std::vector<std::string> &filelist) {
+  int error_code = 1;
+  struct stat s;
 
-    if( stat(sInputPath.c_str(), &s) == 0 )
-    {
-        if( s.st_mode & S_IFREG )
-        {
-            filelist.push_back(sInputPath);
-        }
-        else if( s.st_mode & S_IFDIR )
-        {
-            // processing each file in directory
-            DIR *dir_handle;
-            struct dirent *dir;
-            dir_handle = opendir(sInputPath.c_str());
-            std::vector<std::string> filenames;
-            if (dir_handle)
-            {
-                error_code = 0;
-                while ((dir = readdir(dir_handle)) != NULL)
-                {
-                    if (dir->d_type == DT_REG)
-                    {
-                        std::string sFileName = sInputPath + dir->d_name;
-                        filelist.push_back(sFileName);
-                    }
-                    else if (dir->d_type == DT_DIR)
-                    {
-                        std::string sname = dir->d_name;
-                        if (sname != "." && sname != "..")
-                        {
-                            readInput(sInputPath + sname + "/", filelist);
-                        }
-                    }
-                }
-                closedir(dir_handle);
+  if (stat(sInputPath.c_str(), &s) == 0) {
+    if (s.st_mode & S_IFREG) {
+      filelist.push_back(sInputPath);
+    } else if (s.st_mode & S_IFDIR) {
+      // processing each file in directory
+      DIR *dir_handle;
+      struct dirent *dir;
+      dir_handle = opendir(sInputPath.c_str());
+      std::vector<std::string> filenames;
+      if (dir_handle) {
+        error_code = 0;
+        while ((dir = readdir(dir_handle)) != NULL) {
+          if (dir->d_type == DT_REG) {
+            std::string sFileName = sInputPath + dir->d_name;
+            filelist.push_back(sFileName);
+          } else if (dir->d_type == DT_DIR) {
+            std::string sname = dir->d_name;
+            if (sname != "." && sname != "..") {
+              readInput(sInputPath + sname + "/", filelist);
             }
-            else
-            {
-                std::cout << "Cannot open input directory: " << sInputPath << std::endl;
-                return error_code;
-            }
+          }
         }
-        else
-        {
-            std::cout << "Cannot open input: " << sInputPath << std::endl;
-            return error_code;
-        }
-    }
-    else
-    {
-        std::cout << "Cannot find input path " << sInputPath << std::endl;
+        closedir(dir_handle);
+      } else {
+        std::cout << "Cannot open input directory: " << sInputPath << std::endl;
         return error_code;
+      }
+    } else {
+      std::cout << "Cannot open input: " << sInputPath << std::endl;
+      return error_code;
     }
+  } else {
+    std::cout << "Cannot find input path " << sInputPath << std::endl;
+    return error_code;
+  }
 
-    return 0;
+  return 0;
 }
 
 // *****************************************************************************
@@ -173,7 +145,7 @@ int readInput(const std::string &sInputPath, std::vector<std::string> &filelist)
 int inputDirExists(const char *pathname) {
   struct stat info;
   if (stat(pathname, &info) != 0) {
-    return 0;  // Directory does not exists
+    return 0; // Directory does not exists
   } else if (info.st_mode & S_IFDIR) {
     // is a directory
     return 1;
@@ -207,8 +179,7 @@ int getInputDir(std::string &input_dir, const char *executable_path) {
 
     // Search in default paths for input images.
     std::string pathname = "";
-    const char *searchPath[] = {
-        "./images"};
+    const char *searchPath[] = {"./images"};
 
     for (unsigned int i = 0; i < sizeof(searchPath) / sizeof(char *); ++i) {
       std::string pathname(searchPath[i]);

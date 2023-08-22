@@ -12,13 +12,14 @@ from setuptools.command.build_ext import build_ext
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 
+
 def read(*parts):
     with codecs.open(os.path.join(HERE, *parts), "rb", "utf-8") as f:
         return f.read()
 
+
 class CMakeBuildExt(build_ext):
     def build_extensions(self):
-
         cmake_python_library = "{}/{}".format(
             distutils.sysconfig.get_config_var("LIBDIR"),
             distutils.sysconfig.get_config_var("INSTSONAME"),
@@ -26,8 +27,7 @@ class CMakeBuildExt(build_ext):
         cmake_python_include_dir = distutils.sysconfig.get_python_inc()
 
         install_dir = os.path.abspath(
-            os.path.dirname(self.get_ext_fullpath("dummy"))
-        )
+            os.path.dirname(self.get_ext_fullpath("dummy")))
         os.makedirs(install_dir, exist_ok=True)
         cmake_args = [
             "-DCMAKE_INSTALL_PREFIX={}".format(install_dir),
@@ -38,8 +38,7 @@ class CMakeBuildExt(build_ext):
             "-DNVSHMEM_HOME={}".format(HERE + "/nvshmem"),
             "-DCUFFTMP_HOME={}".format(HERE + "/cufftmp"),
             "-DCMAKE_BUILD_TYPE={}".format(
-                "Debug" if self.debug else "Release"
-            ),
+                "Debug" if self.debug else "Release"),
             "-DCMAKE_PREFIX_PATH={}".format(pybind11.get_cmake_dir()),
         ]
 
@@ -72,12 +71,13 @@ extensions = [
             "src/cufftmp_jax/lib/gpu_ops.cpp",
             "src/cufftmp_jax/lib/kernels.cu",
         ],
-    )]
+    )
+]
 
 
 setup(
     name="fft_jax",
-    version='0.0.1',
+    version="0.0.1",
     author="Leopold Cambier",
     author_email="lcambier@nvidia.com",
     license="All rights reserved",

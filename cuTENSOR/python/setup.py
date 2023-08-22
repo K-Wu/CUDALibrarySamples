@@ -40,11 +40,13 @@ from cutensor.package_info import __license__
 
 from cutensor.c_extensions import CustomExtension
 
-setup(name=__package_name__,
-      version=__version__,
-      description=__description__,
-      url=__homepage__,
-      download_url=__download_url__,
-      license=__license__,
-      packages=find_packages(),
-      ext_modules=CustomExtension.modules)
+setup(
+    name=__package_name__,
+    version=__version__,
+    description=__description__,
+    url=__homepage__,
+    download_url=__download_url__,
+    license=__license__,
+    packages=find_packages(),
+    ext_modules=CustomExtension.modules,
+)

@@ -26,58 +26,57 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <iostream>
+#include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <algorithm>
 
-#include <string.h>  // strcmpi
+#include <string.h> // strcmpi
 #ifndef _WIN64
-#include <sys/time.h>  // timings
+#include <sys/time.h> // timings
 #include <unistd.h>
 #endif
-#include <dirent.h>  
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-
 
 #include <cuda_runtime_api.h>
 #include <nvjpeg.h>
 
+#define CHECK_CUDA(call)                                                       \
+  {                                                                            \
+    cudaError_t _e = (call);                                                   \
+    if (_e != cudaSuccess) {                                                   \
+      std::cout << "CUDA Runtime failure: '#" << _e << "' at " << __FILE__     \
+                << ":" << __LINE__ << std::endl;                               \
+      exit(1);                                                                 \
+    }                                                                          \
+  }
 
-#define CHECK_CUDA(call)                                                        \
-    {                                                                           \
-        cudaError_t _e = (call);                                                \
-        if (_e != cudaSuccess)                                                  \
-        {                                                                       \
-            std::cout << "CUDA Runtime failure: '#" << _e << "' at " <<  __FILE__ << ":" << __LINE__ << std::endl;\
-            exit(1);                                                            \
-        }                                                                       \
-    }
-
-#define CHECK_NVJPEG(call)                                                      \
-    {                                                                           \
-        nvjpegStatus_t _e = (call);                                             \
-        if (_e != NVJPEG_STATUS_SUCCESS)                                        \
-        {                                                                       \
-            std::cout << "NVJPEG failure: '#" << _e << "' at " <<  __FILE__ << ":" << __LINE__ << std::endl;\
-            exit(1);                                                            \
-        }                                                                       \
-    }
-
+#define CHECK_NVJPEG(call)                                                     \
+  {                                                                            \
+    nvjpegStatus_t _e = (call);                                                \
+    if (_e != NVJPEG_STATUS_SUCCESS) {                                         \
+      std::cout << "NVJPEG failure: '#" << _e << "' at " << __FILE__ << ":"    \
+                << __LINE__ << std::endl;                                      \
+      exit(1);                                                                 \
+    }                                                                          \
+  }
 
 int dev_malloc(void **p, size_t s) { return (int)cudaMalloc(p, s); }
 
 int dev_free(void *p) { return (int)cudaFree(p); }
 
-int host_malloc(void** p, size_t s, unsigned int f) { return (int)cudaHostAlloc(p, s, f); }
+int host_malloc(void **p, size_t s, unsigned int f) {
+  return (int)cudaHostAlloc(p, s, f);
+}
 
-int host_free(void* p) { return (int)cudaFreeHost(p); }
+int host_free(void *p) { return (int)cudaFreeHost(p); }
 
 typedef std::vector<std::string> FileNames;
-typedef std::vector<std::vector<char> > FileData;
+typedef std::vector<std::vector<char>> FileData;
 
 struct decode_params_t {
   std::string input_dir;
@@ -94,7 +93,7 @@ struct decode_params_t {
   nvjpegJpegState_t nvjpeg_decoupled_state;
   nvjpegBufferPinned_t pinned_buffers[2]; // 2 buffers for pipelining
   nvjpegBufferDevice_t device_buffer;
-  nvjpegJpegStream_t  jpeg_streams[2]; //  2 streams for pipelining
+  nvjpegJpegStream_t jpeg_streams[2]; //  2 streams for pipelining
   nvjpegDecodeParams_t nvjpeg_decode_params;
   nvjpegJpegDecoder_t nvjpeg_decoder;
 
@@ -183,30 +182,30 @@ int prepare_buffers(FileData &file_data, std::vector<size_t> &file_len,
     }
 
     switch (subsampling) {
-      case NVJPEG_CSS_444:
-        std::cout << "YUV 4:4:4 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_440:
-        std::cout << "YUV 4:4:0 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_422:
-        std::cout << "YUV 4:2:2 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_420:
-        std::cout << "YUV 4:2:0 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_411:
-        std::cout << "YUV 4:1:1 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_410:
-        std::cout << "YUV 4:1:0 chroma subsampling" << std::endl;
-        break;
-      case NVJPEG_CSS_GRAY:
-        std::cout << "Grayscale JPEG " << std::endl;
-        break;
-      case NVJPEG_CSS_UNKNOWN:
-        std::cout << "Unknown chroma subsampling" << std::endl;
-        return EXIT_FAILURE;
+    case NVJPEG_CSS_444:
+      std::cout << "YUV 4:4:4 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_440:
+      std::cout << "YUV 4:4:0 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_422:
+      std::cout << "YUV 4:2:2 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_420:
+      std::cout << "YUV 4:2:0 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_411:
+      std::cout << "YUV 4:1:1 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_410:
+      std::cout << "YUV 4:1:0 chroma subsampling" << std::endl;
+      break;
+    case NVJPEG_CSS_GRAY:
+      std::cout << "Grayscale JPEG " << std::endl;
+      break;
+    case NVJPEG_CSS_UNKNOWN:
+      std::cout << "Unknown chroma subsampling" << std::endl;
+      return EXIT_FAILURE;
     }
 
     int mul = 1;
@@ -242,22 +241,31 @@ int prepare_buffers(FileData &file_data, std::vector<size_t> &file_len,
   return EXIT_SUCCESS;
 }
 
-void create_decoupled_api_handles(decode_params_t& params){
+void create_decoupled_api_handles(decode_params_t &params) {
 
-  CHECK_NVJPEG(nvjpegDecoderCreate(params.nvjpeg_handle, NVJPEG_BACKEND_DEFAULT, &params.nvjpeg_decoder));
-  CHECK_NVJPEG(nvjpegDecoderStateCreate(params.nvjpeg_handle, params.nvjpeg_decoder, &params.nvjpeg_decoupled_state));   
-  
-  CHECK_NVJPEG(nvjpegBufferPinnedCreate(params.nvjpeg_handle, NULL, &params.pinned_buffers[0]));
-  CHECK_NVJPEG(nvjpegBufferPinnedCreate(params.nvjpeg_handle, NULL, &params.pinned_buffers[1]));
-  CHECK_NVJPEG(nvjpegBufferDeviceCreate(params.nvjpeg_handle, NULL, &params.device_buffer));
-  
-  CHECK_NVJPEG(nvjpegJpegStreamCreate(params.nvjpeg_handle, &params.jpeg_streams[0]));
-  CHECK_NVJPEG(nvjpegJpegStreamCreate(params.nvjpeg_handle, &params.jpeg_streams[1]));
+  CHECK_NVJPEG(nvjpegDecoderCreate(params.nvjpeg_handle, NVJPEG_BACKEND_DEFAULT,
+                                   &params.nvjpeg_decoder));
+  CHECK_NVJPEG(nvjpegDecoderStateCreate(params.nvjpeg_handle,
+                                        params.nvjpeg_decoder,
+                                        &params.nvjpeg_decoupled_state));
 
-  CHECK_NVJPEG(nvjpegDecodeParamsCreate(params.nvjpeg_handle, &params.nvjpeg_decode_params));
+  CHECK_NVJPEG(nvjpegBufferPinnedCreate(params.nvjpeg_handle, NULL,
+                                        &params.pinned_buffers[0]));
+  CHECK_NVJPEG(nvjpegBufferPinnedCreate(params.nvjpeg_handle, NULL,
+                                        &params.pinned_buffers[1]));
+  CHECK_NVJPEG(nvjpegBufferDeviceCreate(params.nvjpeg_handle, NULL,
+                                        &params.device_buffer));
+
+  CHECK_NVJPEG(
+      nvjpegJpegStreamCreate(params.nvjpeg_handle, &params.jpeg_streams[0]));
+  CHECK_NVJPEG(
+      nvjpegJpegStreamCreate(params.nvjpeg_handle, &params.jpeg_streams[1]));
+
+  CHECK_NVJPEG(nvjpegDecodeParamsCreate(params.nvjpeg_handle,
+                                        &params.nvjpeg_decode_params));
 }
 
-void destroy_decoupled_api_handles(decode_params_t& params){  
+void destroy_decoupled_api_handles(decode_params_t &params) {
 
   CHECK_NVJPEG(nvjpegDecodeParamsDestroy(params.nvjpeg_decode_params));
   CHECK_NVJPEG(nvjpegJpegStreamDestroy(params.jpeg_streams[0]));
@@ -265,78 +273,63 @@ void destroy_decoupled_api_handles(decode_params_t& params){
   CHECK_NVJPEG(nvjpegBufferPinnedDestroy(params.pinned_buffers[0]));
   CHECK_NVJPEG(nvjpegBufferPinnedDestroy(params.pinned_buffers[1]));
   CHECK_NVJPEG(nvjpegBufferDeviceDestroy(params.device_buffer));
-  CHECK_NVJPEG(nvjpegJpegStateDestroy(params.nvjpeg_decoupled_state));  
+  CHECK_NVJPEG(nvjpegJpegStateDestroy(params.nvjpeg_decoupled_state));
   CHECK_NVJPEG(nvjpegDecoderDestroy(params.nvjpeg_decoder));
 }
 
 void release_buffers(std::vector<nvjpegImage_t> &ibuf) {
   for (int i = 0; i < ibuf.size(); i++) {
     for (int c = 0; c < NVJPEG_MAX_COMPONENT; c++)
-      if (ibuf[i].channel[c]) CHECK_CUDA(cudaFree(ibuf[i].channel[c]));
+      if (ibuf[i].channel[c])
+        CHECK_CUDA(cudaFree(ibuf[i].channel[c]));
   }
 }
 
 // *****************************************************************************
 // reading input directory to file list
 // -----------------------------------------------------------------------------
-int readInput(const std::string &sInputPath, std::vector<std::string> &filelist)
-{
-    int error_code = 1;
-    struct stat s;
+int readInput(const std::string &sInputPath,
+              std::vector<std::string> &filelist) {
+  int error_code = 1;
+  struct stat s;
 
-    if( stat(sInputPath.c_str(), &s) == 0 )
-    {
-        if( s.st_mode & S_IFREG )
-        {
-            filelist.push_back(sInputPath);
-        }
-        else if( s.st_mode & S_IFDIR )
-        {
-            // processing each file in directory
-            DIR *dir_handle;
-            struct dirent *dir;
-            dir_handle = opendir(sInputPath.c_str());
-            std::vector<std::string> filenames;
-            if (dir_handle)
-            {
-                error_code = 0;
-                while ((dir = readdir(dir_handle)) != NULL)
-                {
-                    if (dir->d_type == DT_REG)
-                    {
-                        std::string sFileName = sInputPath + dir->d_name;
-                        filelist.push_back(sFileName);
-                    }
-                    else if (dir->d_type == DT_DIR)
-                    {
-                        std::string sname = dir->d_name;
-                        if (sname != "." && sname != "..")
-                        {
-                            readInput(sInputPath + sname + "/", filelist);
-                        }
-                    }
-                }
-                closedir(dir_handle);
+  if (stat(sInputPath.c_str(), &s) == 0) {
+    if (s.st_mode & S_IFREG) {
+      filelist.push_back(sInputPath);
+    } else if (s.st_mode & S_IFDIR) {
+      // processing each file in directory
+      DIR *dir_handle;
+      struct dirent *dir;
+      dir_handle = opendir(sInputPath.c_str());
+      std::vector<std::string> filenames;
+      if (dir_handle) {
+        error_code = 0;
+        while ((dir = readdir(dir_handle)) != NULL) {
+          if (dir->d_type == DT_REG) {
+            std::string sFileName = sInputPath + dir->d_name;
+            filelist.push_back(sFileName);
+          } else if (dir->d_type == DT_DIR) {
+            std::string sname = dir->d_name;
+            if (sname != "." && sname != "..") {
+              readInput(sInputPath + sname + "/", filelist);
             }
-            else
-            {
-                std::cout << "Cannot open input directory: " << sInputPath << std::endl;
-                return error_code;
-            }
+          }
         }
-        else
-        {
-            std::cout << "Cannot open input: " << sInputPath << std::endl;
-            return error_code;
-        }
-    }
-    else
-    {
-        std::cout << "Cannot find input path " << sInputPath << std::endl;
+        closedir(dir_handle);
+      } else {
+        std::cout << "Cannot open input directory: " << sInputPath << std::endl;
         return error_code;
+      }
+    } else {
+      std::cout << "Cannot open input: " << sInputPath << std::endl;
+      return error_code;
     }
+  } else {
+    std::cout << "Cannot find input path " << sInputPath << std::endl;
+    return error_code;
+  }
 
-    return 0;
+  return 0;
 }
 
 // *****************************************************************************
@@ -345,7 +338,7 @@ int readInput(const std::string &sInputPath, std::vector<std::string> &filelist)
 int inputDirExists(const char *pathname) {
   struct stat info;
   if (stat(pathname, &info) != 0) {
-    return 0;  // Directory does not exists
+    return 0; // Directory does not exists
   } else if (info.st_mode & S_IFDIR) {
     // is a directory
     return 1;
@@ -379,8 +372,7 @@ int getInputDir(std::string &input_dir, const char *executable_path) {
 
     // Search in default paths for input images.
     std::string pathname = "";
-    const char *searchPath[] = {
-        "./images"};
+    const char *searchPath[] = {"./images"};
 
     for (unsigned int i = 0; i < sizeof(searchPath) / sizeof(char *); ++i) {
       std::string pathname(searchPath[i]);
@@ -422,18 +414,19 @@ int writeBMP(const char *filename, const unsigned char *d_chanR, int pitchR,
   unsigned char *chanR = vchanR.data();
   unsigned char *chanG = vchanG.data();
   unsigned char *chanB = vchanB.data();
-  CHECK_CUDA(cudaMemcpy2D(chanR, (size_t)width, d_chanR, (size_t)pitchR,
-                               width, height, cudaMemcpyDeviceToHost));
-  CHECK_CUDA(cudaMemcpy2D(chanG, (size_t)width, d_chanG, (size_t)pitchR,
-                               width, height, cudaMemcpyDeviceToHost));
-  CHECK_CUDA(cudaMemcpy2D(chanB, (size_t)width, d_chanB, (size_t)pitchR,
-                               width, height, cudaMemcpyDeviceToHost));
+  CHECK_CUDA(cudaMemcpy2D(chanR, (size_t)width, d_chanR, (size_t)pitchR, width,
+                          height, cudaMemcpyDeviceToHost));
+  CHECK_CUDA(cudaMemcpy2D(chanG, (size_t)width, d_chanG, (size_t)pitchR, width,
+                          height, cudaMemcpyDeviceToHost));
+  CHECK_CUDA(cudaMemcpy2D(chanB, (size_t)width, d_chanB, (size_t)pitchR, width,
+                          height, cudaMemcpyDeviceToHost));
 
   extrabytes =
-      4 - ((width * 3) % 4);  // How many bytes of padding to add to each
+      4 - ((width * 3) % 4); // How many bytes of padding to add to each
   // horizontal line - the size of which must
   // be a multiple of 4 bytes.
-  if (extrabytes == 4) extrabytes = 0;
+  if (extrabytes == 4)
+    extrabytes = 0;
 
   paddedsize = ((width * 3) + extrabytes) * height;
 
@@ -441,23 +434,23 @@ int writeBMP(const char *filename, const unsigned char *d_chanR, int pitchR,
   // Note that the "BM" identifier in bytes 0 and 1 is NOT included in these
   // "headers".
 
-  headers[0] = paddedsize + 54;  // bfSize (whole file size)
-  headers[1] = 0;                // bfReserved (both)
-  headers[2] = 54;               // bfOffbits
-  headers[3] = 40;               // biSize
-  headers[4] = width;            // biWidth
-  headers[5] = height;           // biHeight
+  headers[0] = paddedsize + 54; // bfSize (whole file size)
+  headers[1] = 0;               // bfReserved (both)
+  headers[2] = 54;              // bfOffbits
+  headers[3] = 40;              // biSize
+  headers[4] = width;           // biWidth
+  headers[5] = height;          // biHeight
 
   // Would have biPlanes and biBitCount in position 6, but they're shorts.
   // It's easier to write them out separately (see below) than pretend
   // they're a single int, especially with endian issues...
 
-  headers[7] = 0;           // biCompression
-  headers[8] = paddedsize;  // biSizeImage
-  headers[9] = 0;           // biXPelsPerMeter
-  headers[10] = 0;          // biYPelsPerMeter
-  headers[11] = 0;          // biClrUsed
-  headers[12] = 0;          // biClrImportant
+  headers[7] = 0;          // biCompression
+  headers[8] = paddedsize; // biSizeImage
+  headers[9] = 0;          // biXPelsPerMeter
+  headers[10] = 0;         // biYPelsPerMeter
+  headers[11] = 0;         // biClrUsed
+  headers[12] = 0;         // biClrImportant
 
   if (!(outfile = fopen(filename, "wb"))) {
     std::cerr << "Cannot open file: " << filename << std::endl;
@@ -497,26 +490,32 @@ int writeBMP(const char *filename, const unsigned char *d_chanR, int pitchR,
   //
 
   for (y = height - 1; y >= 0;
-       y--)  // BMP image format is written from bottom to top...
+       y--) // BMP image format is written from bottom to top...
   {
     for (x = 0; x <= width - 1; x++) {
       red = chanR[y * width + x];
       green = chanG[y * width + x];
       blue = chanB[y * width + x];
 
-      if (red > 255) red = 255;
-      if (red < 0) red = 0;
-      if (green > 255) green = 255;
-      if (green < 0) green = 0;
-      if (blue > 255) blue = 255;
-      if (blue < 0) blue = 0;
+      if (red > 255)
+        red = 255;
+      if (red < 0)
+        red = 0;
+      if (green > 255)
+        green = 255;
+      if (green < 0)
+        green = 0;
+      if (blue > 255)
+        blue = 255;
+      if (blue < 0)
+        blue = 0;
       // Also, it's written in (b,g,r) format...
 
       fprintf(outfile, "%c", blue);
       fprintf(outfile, "%c", green);
       fprintf(outfile, "%c", red);
     }
-    if (extrabytes)  // See above - BMP lines must be of lengths divisible by 4.
+    if (extrabytes) // See above - BMP lines must be of lengths divisible by 4.
     {
       for (n = 1; n <= extrabytes; n++) {
         fprintf(outfile, "%c", 0);
@@ -543,36 +542,37 @@ int writeBMPi(const char *filename, const unsigned char *d_RGB, int pitch,
   std::vector<unsigned char> vchanRGB(height * width * 3);
   unsigned char *chanRGB = vchanRGB.data();
   CHECK_CUDA(cudaMemcpy2D(chanRGB, (size_t)width * 3, d_RGB, (size_t)pitch,
-                               width * 3, height, cudaMemcpyDeviceToHost));
+                          width * 3, height, cudaMemcpyDeviceToHost));
 
   extrabytes =
-      4 - ((width * 3) % 4);  // How many bytes of padding to add to each
+      4 - ((width * 3) % 4); // How many bytes of padding to add to each
   // horizontal line - the size of which must
   // be a multiple of 4 bytes.
-  if (extrabytes == 4) extrabytes = 0;
+  if (extrabytes == 4)
+    extrabytes = 0;
 
   paddedsize = ((width * 3) + extrabytes) * height;
 
   // Headers...
   // Note that the "BM" identifier in bytes 0 and 1 is NOT included in these
   // "headers".
-  headers[0] = paddedsize + 54;  // bfSize (whole file size)
-  headers[1] = 0;                // bfReserved (both)
-  headers[2] = 54;               // bfOffbits
-  headers[3] = 40;               // biSize
-  headers[4] = width;            // biWidth
-  headers[5] = height;           // biHeight
+  headers[0] = paddedsize + 54; // bfSize (whole file size)
+  headers[1] = 0;               // bfReserved (both)
+  headers[2] = 54;              // bfOffbits
+  headers[3] = 40;              // biSize
+  headers[4] = width;           // biWidth
+  headers[5] = height;          // biHeight
 
   // Would have biPlanes and biBitCount in position 6, but they're shorts.
   // It's easier to write them out separately (see below) than pretend
   // they're a single int, especially with endian issues...
 
-  headers[7] = 0;           // biCompression
-  headers[8] = paddedsize;  // biSizeImage
-  headers[9] = 0;           // biXPelsPerMeter
-  headers[10] = 0;          // biYPelsPerMeter
-  headers[11] = 0;          // biClrUsed
-  headers[12] = 0;          // biClrImportant
+  headers[7] = 0;          // biCompression
+  headers[8] = paddedsize; // biSizeImage
+  headers[9] = 0;          // biXPelsPerMeter
+  headers[10] = 0;         // biYPelsPerMeter
+  headers[11] = 0;         // biClrUsed
+  headers[12] = 0;         // biClrImportant
 
   if (!(outfile = fopen(filename, "wb"))) {
     std::cerr << "Cannot open file: " << filename << std::endl;
@@ -612,26 +612,32 @@ int writeBMPi(const char *filename, const unsigned char *d_RGB, int pitch,
   // Headers done, now write the data...
   //
   for (y = height - 1; y >= 0;
-       y--)  // BMP image format is written from bottom to top...
+       y--) // BMP image format is written from bottom to top...
   {
     for (x = 0; x <= width - 1; x++) {
       red = chanRGB[(y * width + x) * 3];
       green = chanRGB[(y * width + x) * 3 + 1];
       blue = chanRGB[(y * width + x) * 3 + 2];
 
-      if (red > 255) red = 255;
-      if (red < 0) red = 0;
-      if (green > 255) green = 255;
-      if (green < 0) green = 0;
-      if (blue > 255) blue = 255;
-      if (blue < 0) blue = 0;
+      if (red > 255)
+        red = 255;
+      if (red < 0)
+        red = 0;
+      if (green > 255)
+        green = 255;
+      if (green < 0)
+        green = 0;
+      if (blue > 255)
+        blue = 255;
+      if (blue < 0)
+        blue = 0;
       // Also, it's written in (b,g,r) format...
 
       fprintf(outfile, "%c", blue);
       fprintf(outfile, "%c", green);
       fprintf(outfile, "%c", red);
     }
-    if (extrabytes)  // See above - BMP lines must be of lengths divisible by 4.
+    if (extrabytes) // See above - BMP lines must be of lengths divisible by 4.
     {
       for (n = 1; n <= extrabytes; n++) {
         fprintf(outfile, "%c", 0);
@@ -642,7 +648,6 @@ int writeBMPi(const char *filename, const unsigned char *d_RGB, int pitch,
   fclose(outfile);
   return 0;
 }
-
 
 // *****************************************************************************
 // parse parameters

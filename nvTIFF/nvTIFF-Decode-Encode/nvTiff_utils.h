@@ -22,15 +22,16 @@
 #ifndef __UTILS_H__
 #define __UTILS_H__
 #include <sys/types.h>
-#if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64) || defined(_MSC_VER)
-#  define WINDOWS_LEAN_AND_MEAN
-#  define NOMINMAX
-#include <windows.h>
+#if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64) ||  \
+    defined(_MSC_VER)
+#define WINDOWS_LEAN_AND_MEAN
+#define NOMINMAX
 #include <chrono>
-#  pragma warning(disable:4819)
+#include <windows.h>
+#pragma warning(disable : 4819)
 #else
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
 #endif
 #ifdef __cplusplus
 #define UTILS_LINKAGE "C"
@@ -42,8 +43,10 @@ extern UTILS_LINKAGE void *Malloc(size_t sz);
 extern UTILS_LINKAGE void Free(void **ptr);
 extern UTILS_LINKAGE void *Realloc(void *ptr, size_t sz);
 extern UTILS_LINKAGE FILE *Fopen(const char *path, const char *mode);
-extern UTILS_LINKAGE size_t Fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
-extern UTILS_LINKAGE size_t Fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
+extern UTILS_LINKAGE size_t Fwrite(const void *ptr, size_t size, size_t nmemb,
+                                   FILE *stream);
+extern UTILS_LINKAGE size_t Fread(void *ptr, size_t size, size_t nmemb,
+                                  FILE *stream);
 extern UTILS_LINKAGE int Remove(const char *pathname);
 extern UTILS_LINKAGE off_t getFsize(const char *fpath);
 extern UTILS_LINKAGE double Wtime(void);

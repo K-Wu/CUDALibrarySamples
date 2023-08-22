@@ -35,10 +35,12 @@ PATCH = 0
 
 VERSION = (MAJOR, MINOR, PATCH)
 
-__version__ = '.'.join(map(str, VERSION))
+__version__ = ".".join(map(str, VERSION))
 
-__package_name__ = 'cutensor-python'
-__description__ = 'PyTorch and Tensorflow Python bindings for cuTENSOR',
-__homepage__ = 'https://developer.nvidia.com/cutensor',
-__download_url__ = 'https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuTENSOR/cutensor',
-__license__ = 'BSD'
+__package_name__ = "cutensor-python"
+__description__ = ("PyTorch and Tensorflow Python bindings for cuTENSOR",)
+__homepage__ = ("https://developer.nvidia.com/cutensor",)
+__download_url__ = (
+    "https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuTENSOR/cutensor",
+)
+__license__ = "BSD"

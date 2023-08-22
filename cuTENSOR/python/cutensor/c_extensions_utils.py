@@ -35,27 +35,28 @@ import os
 import subprocess
 import re
 
-__all__ = ['CustomExtension']
+__all__ = ["CustomExtension"]
 
 include_dirs = []
 library_dirs = []
 
-cuda_nvcc = find_executable('nvcc')
+cuda_nvcc = find_executable("nvcc")
 cuda_root = os.path.join(os.path.dirname(cuda_nvcc), os.pardir)
 cuda_version = re.search(
-    r'release ([^,]*),',
-    subprocess.check_output([cuda_nvcc, '--version']).decode('utf-8')).group(1)
-include_dirs.append(os.path.join(cuda_root, 'include'))
-library_dirs.append(os.path.join(cuda_root, 'lib64'))
+    r"release ([^,]*),",
+    subprocess.check_output([cuda_nvcc, "--version"]).decode("utf-8"),
+).group(1)
+include_dirs.append(os.path.join(cuda_root, "include"))
+library_dirs.append(os.path.join(cuda_root, "lib64"))
 
-if 'CUTENSOR_ROOT' in os.environ:
-    root = os.environ['CUTENSOR_ROOT']
-    include_dirs.append(os.path.join(root, 'include'))
-    library_dirs.append(os.path.join(root, 'lib'))
-    library_dirs.append(os.path.join(root, 'build/lib'))
-    versioned_path = os.path.join(root, 'lib', cuda_version)
+if "CUTENSOR_ROOT" in os.environ:
+    root = os.environ["CUTENSOR_ROOT"]
+    include_dirs.append(os.path.join(root, "include"))
+    library_dirs.append(os.path.join(root, "lib"))
+    library_dirs.append(os.path.join(root, "build/lib"))
+    versioned_path = os.path.join(root, "lib", cuda_version)
     if not os.path.exists(versioned_path):
-        versioned_path = os.path.join(root, 'lib', cuda_version.split('.')[0])
+        versioned_path = os.path.join(root, "lib", cuda_version.split(".")[0])
     library_dirs.append(versioned_path)
 
 
@@ -67,21 +68,25 @@ class CustomExtension:
         try:
             import torch
             from torch.utils.cpp_extension import CUDAExtension
-            ext = CUDAExtension(name,
-                                sources=sources,
-                                libraries=['cutensor'],
-                                define_macros=[
-                                    ('TORCH_API_INCLUDE_EXTENSION_H',),
-                                    ('TORCH_EXTENSION_NAME',
-                                     name.split('.')[-1]),
-                                    ('_GLIBCXX_USE_CXX11_ABI',
-                                     str(int(torch._C._GLIBCXX_USE_CXX11_ABI)))
-                                ],
-                                extra_compile_args=['-std=c++14', '-fopenmp'],
-                                extra_link_args=['-std=c++14', '-fopenmp'],
-                                include_dirs=include_dirs,
-                                library_dirs=library_dirs,
-                                runtime_library_dirs=library_dirs)
+
+            ext = CUDAExtension(
+                name,
+                sources=sources,
+                libraries=["cutensor"],
+                define_macros=[
+                    ("TORCH_API_INCLUDE_EXTENSION_H",),
+                    ("TORCH_EXTENSION_NAME", name.split(".")[-1]),
+                    (
+                        "_GLIBCXX_USE_CXX11_ABI",
+                        str(int(torch._C._GLIBCXX_USE_CXX11_ABI)),
+                    ),
+                ],
+                extra_compile_args=["-std=c++14", "-fopenmp"],
+                extra_link_args=["-std=c++14", "-fopenmp"],
+                include_dirs=include_dirs,
+                library_dirs=library_dirs,
+                runtime_library_dirs=library_dirs,
+            )
             cls.modules.append(ext)
             return ext
         except ImportError:
@@ -91,16 +96,19 @@ class CustomExtension:
     def Tensorflow(cls, name, sources):
         try:
             import tensorflow as tf
-            ext = Extension(name,
-                            sources=sources,
-                            libraries=['cutensor', 'cudart'],
-                            extra_compile_args=tf.sysconfig.get_compile_flags(),
-                            extra_link_args=tf.sysconfig.get_link_flags() +
-                            tf.sysconfig.get_compile_flags(),
-                            define_macros=[('GOOGLE_CUDA', '1')],
-                            include_dirs=include_dirs,
-                            library_dirs=library_dirs,
-                            runtime_library_dirs=library_dirs)
+
+            ext = Extension(
+                name,
+                sources=sources,
+                libraries=["cutensor", "cudart"],
+                extra_compile_args=tf.sysconfig.get_compile_flags(),
+                extra_link_args=tf.sysconfig.get_link_flags()
+                + tf.sysconfig.get_compile_flags(),
+                define_macros=[("GOOGLE_CUDA", "1")],
+                include_dirs=include_dirs,
+                library_dirs=library_dirs,
+                runtime_library_dirs=library_dirs,
+            )
             cls.modules.append(ext)
         except ImportError:
             return None

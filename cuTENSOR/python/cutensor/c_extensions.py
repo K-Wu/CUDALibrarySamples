@@ -31,13 +31,15 @@
 
 from cutensor.c_extensions_utils import CustomExtension
 
-einsum_torch = CustomExtension.Torch('cutensor.torch.binding',
-                                     sources=['cutensor/torch/einsum.cc'])
+einsum_torch = CustomExtension.Torch(
+    "cutensor.torch.binding", sources=["cutensor/torch/einsum.cc"]
+)
 
 einsum_tf = CustomExtension.Tensorflow(
-    'cutensor.tensorflow.binding',
+    "cutensor.tensorflow.binding",
     sources=[
-        'cutensor/tensorflow/einsum_kernel.cc',
-        'cutensor/tensorflow/einsum_ops.cc',
-        'cutensor/tensorflow/einsum_module.cc'
-    ])
+        "cutensor/tensorflow/einsum_kernel.cc",
+        "cutensor/tensorflow/einsum_ops.cc",
+        "cutensor/tensorflow/einsum_module.cc",
+    ],
+)

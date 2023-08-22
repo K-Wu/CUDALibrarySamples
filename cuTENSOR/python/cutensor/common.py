@@ -29,14 +29,18 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+
 def normalize_subscript(subscript):
-    if '->' in subscript:
-        subscript = subscript.split('->')
+    if "->" in subscript:
+        subscript = subscript.split("->")
         lhs = subscript[0]
         rhs = subscript[1]
     else:
         lhs = subscript
-        rhs = ''.join(sorted([s for s in set(subscript) if s != ',' and subscript.count(s) == 1]))
-    if '...' in lhs:
-        raise RuntimeError('Elipsis is currently unsupported')
-    return lhs + '->' + rhs, ',' in lhs
+        rhs = "".join(
+            sorted([s for s in set(subscript) if s !=
+                   "," and subscript.count(s) == 1])
+        )
+    if "..." in lhs:
+        raise RuntimeError("Elipsis is currently unsupported")
+    return lhs + "->" + rhs, "," in lhs
