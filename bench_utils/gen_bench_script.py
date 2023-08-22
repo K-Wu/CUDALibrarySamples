@@ -39,7 +39,8 @@ if __name__ == "__main__":
     for workload in workloads:
         workload_info = workloads[workload]
         with open(
-            "artifacts/generated_bench{workload}.sh".format(workload=workload), "w"
+            "artifacts/generated_bench{workload}.sh".format(
+                workload=workload), "w"
         ) as fd:
             fd.write(get_header(workload))
             for m, n, k in workload_info["mnk"]:
