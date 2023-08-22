@@ -1,4 +1,6 @@
-# CUDA Library Samples
+# CUDA Library Samples 
+
+## Healthiness of My Custom Logic [![DeepSource](https://app.deepsource.com/gh/K-Wu/CUDALibrarySamples.svg/?label=active+issues&show_trend=true&token=T95CPNQm8pPMoKo0LFtiV0FX)](https://app.deepsource.com/gh/K-Wu/CUDALibrarySamples/?ref=repository-badge)
 
 CUDA Library Samples contains examples demonstrating the use of
 features in the 
