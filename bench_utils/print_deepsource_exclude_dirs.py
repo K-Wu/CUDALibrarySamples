@@ -6,17 +6,36 @@ if __name__ == "__main__":
         # skip 3rdparty, .git, and .vscode
         if (
             item.startswith("./3rdparty")
-            or item.startswith("./.git/")
+            or item.startswith("./.git")
             or item.startswith("./.vscode")
         ):
             continue
 
-        # skip if it is not the innermost directory
-        if set([x[0] for x in os.walk(item) if not x[0].endswith("build")]) != {item}:
+        # skip /build/
+        if "/build/" in item:
             continue
 
         # skip my code
         if item.startswith("./bench_utils") or "/bench_" in item:
+            continue
+
+        # no adding this directory if it is not the innermost directory
+        if (
+            sum(
+                set(
+                    map(
+                        lambda x: not os.path.isfile(os.path.join(item, x)),
+                        set(os.listdir(item)),
+                    )
+                ).difference("build")
+            )
+            > 0
+        ):
+            # add the source files at this level
+            for file_or_dir in os.listdir(item):
+                if os.path.isfile(os.path.join(item, file_or_dir)):
+                    # remove the leading "."
+                    print(os.path.join(item, file_or_dir)[1:])
             continue
 
         # remove the leading "." and add "**" to the end
