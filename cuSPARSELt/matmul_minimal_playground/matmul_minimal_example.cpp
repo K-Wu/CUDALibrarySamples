@@ -46,11 +46,11 @@
  * comments to the code, the above Disclaimer and U.S. Government End
  * Users Notice.
  */
-#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
-#include <cusparseLt.h>        // cusparseLt header
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
+#include <cusparseLt.h>       // cusparseLt header
 
-#include <cstdio>   // printf
-#include <cstdlib>  // std::rand
+#include <cstdio>  // printf
+#include <cstdlib> // std::rand
 
 struct cusparseLtSpMatHandleAndData {
   cusparseLtMatDescriptor_t mat;
@@ -69,14 +69,14 @@ struct cusparseLtDnMatHandleAndData {
   void *values{nullptr};
 };
 
-#define CHECK_CUDA(func)                                                   \
-  {                                                                        \
-    cudaError_t status = (func);                                           \
-    if (status != cudaSuccess) {                                           \
-      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
-             cudaGetErrorString(status), status);                          \
-      return EXIT_FAILURE;                                                 \
-    }                                                                      \
+#define CHECK_CUDA(func)                                                       \
+  {                                                                            \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__,     \
+             cudaGetErrorString(status), status);                              \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
   }
 
 #define CHECK_CUSPARSE(func)                                                   \
@@ -99,10 +99,9 @@ int main(void) {
       cudaDeviceGetAttribute(&minor_cc, cudaDevAttrComputeCapabilityMinor, 0))
   if (!(major_cc == 8 && minor_cc == 0) && !(major_cc == 8 && minor_cc == 6) &&
       !(major_cc == 8 && minor_cc == 9)) {
-    std::printf(
-        "\ncusparseLt is supported only on GPU devices with"
-        " compute capability == 8.0, 8.6, 8.9 current: %d.%d\n\n",
-        major_cc, minor_cc);
+    std::printf("\ncusparseLt is supported only on GPU devices with"
+                " compute capability == 8.0, 8.6, 8.9 current: %d.%d\n\n",
+                major_cc, minor_cc);
     return EXIT_UNSUPPORTED;
   }
   // Host problem definition, row-major order
@@ -214,9 +213,8 @@ int main(void) {
                              cudaMemcpyDeviceToHost, stream))
   CHECK_CUDA(cudaStreamSynchronize(stream))
   if (is_valid != 0) {
-    std::printf(
-        "!!!! The matrix has been pruned in a wrong way. "
-        "cusparseLtMatmul will not provide correct results\n");
+    std::printf("!!!! The matrix has been pruned in a wrong way. "
+                "cusparseLtMatmul will not provide correct results\n");
     return EXIT_FAILURE;
   }
   //--------------------------------------------------------------------------
@@ -283,11 +281,11 @@ int main(void) {
       for (int k1 = 0; k1 < k; k1++) {
         auto posA = (A_std_layout) ? i * lda + k1 : i + k1 * lda;
         auto posB = (B_std_layout) ? k1 * ldb + j : k1 + j * ldb;
-        sum += static_cast<float>(hA[posA]) *  // [i][k]
-               static_cast<float>(hB[posB]);   // [k][j]
+        sum += static_cast<float>(hA[posA]) * // [i][k]
+               static_cast<float>(hB[posB]);  // [k][j]
       }
       auto posC = (is_rowmajor) ? i * ldc + j : i + j * ldc;
-      hC_result[posC] = sum;  // [i][j]
+      hC_result[posC] = sum; // [i][j]
     }
   }
   // host-device comparison
