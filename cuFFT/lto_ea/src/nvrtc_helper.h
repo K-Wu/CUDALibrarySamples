@@ -33,21 +33,21 @@
 #define COMMON_NVRTC_HELPER_H_
 
 #include <cuda.h>
-#include <nvrtc.h>
 #include <fstream>
 #include <iostream>
+#include <nvrtc.h>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#define NVRTC_SAFE_CALL(Name, x)                                \
-  do {                                                          \
-    nvrtcResult result = x;                                     \
-    if (result != NVRTC_SUCCESS) {                              \
-      std::cerr << "\nerror: " << Name << " failed with error " \
-                << nvrtcGetErrorString(result) << std::endl;    \
-      exit(1);                                                  \
-    }                                                           \
+#define NVRTC_SAFE_CALL(Name, x)                                               \
+  do {                                                                         \
+    nvrtcResult result = x;                                                    \
+    if (result != NVRTC_SUCCESS) {                                             \
+      std::cerr << "\nerror: " << Name << " failed with error "                \
+                << nvrtcGetErrorString(result) << std::endl;                   \
+      exit(1);                                                                 \
+    }                                                                          \
   } while (0)
 
 #define STRINGIZE2(s) #s
@@ -56,8 +56,10 @@
 #define CUDA_ARCH_FLAG "-arch=compute_" STRINGIZE(CUDA_ARCH)
 #define CALLBACK_CODE_PATH(name) STRINGIZE(SOURCE_PATH) "/" name
 
-void compile_file_to_lto(std::vector<char>& cubin_result, const char *filename) {
-  std::ifstream inputFile(filename, std::ios::in | std::ios::binary | std::ios::ate);
+void compile_file_to_lto(std::vector<char> &cubin_result,
+                         const char *filename) {
+  std::ifstream inputFile(filename,
+                          std::ios::in | std::ios::binary | std::ios::ate);
   if (!inputFile.is_open()) {
     std::cerr << "\nerror: unable to open " << filename << " for reading!\n";
     exit(1);
@@ -72,27 +74,28 @@ void compile_file_to_lto(std::vector<char>& cubin_result, const char *filename) 
   inputFile.close();
   memBlock[inputSize] = '\x0';
 
-  const int   num_params       = 6;
-  const char *compile_params[] = {INCLUDE_CUDA_PATH,
-                                  CUDA_ARCH_FLAG,
-                                  "--std=c++11",
-                                  "--relocatable-device-code=true",
-                                  "-default-device",
-                                  "-dlto"};
+  const int num_params = 6;
+  const char *compile_params[] = {
+      INCLUDE_CUDA_PATH, CUDA_ARCH_FLAG,
+      "--std=c++11",     "--relocatable-device-code=true",
+      "-default-device", "-dlto"};
 
   // Compile
   nvrtcProgram prog;
-  NVRTC_SAFE_CALL("nvrtcCreateProgram", nvrtcCreateProgram(&prog, memBlock.data(), filename, 0, NULL, NULL));
+  NVRTC_SAFE_CALL(
+      "nvrtcCreateProgram",
+      nvrtcCreateProgram(&prog, memBlock.data(), filename, 0, NULL, NULL));
   nvrtcResult res = nvrtcCompileProgram(prog, num_params, compile_params);
 
   // Print log
   size_t logSize;
-  NVRTC_SAFE_CALL("nvrtcGetProgramLogSize", nvrtcGetProgramLogSize(prog, &logSize));
+  NVRTC_SAFE_CALL("nvrtcGetProgramLogSize",
+                  nvrtcGetProgramLogSize(prog, &logSize));
   std::vector<char> log(logSize + 1);
   NVRTC_SAFE_CALL("nvrtcGetProgramLog", nvrtcGetProgramLog(prog, log.data()));
   log[logSize] = '\x0';
 
-  if(log.size() > 2) {
+  if (log.size() > 2) {
     std::cerr << "\n compilation log ---\n";
     std::string s(log.begin(), log.end());
     std::cerr << s;
@@ -108,4 +111,4 @@ void compile_file_to_lto(std::vector<char>& cubin_result, const char *filename) 
   cubin_result = buffer;
 }
 
-#endif  // COMMON_NVRTC_HELPER_H_
+#endif // COMMON_NVRTC_HELPER_H_
