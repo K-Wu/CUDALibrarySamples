@@ -41,9 +41,9 @@ if __name__ == "__main__":
             # add the source files at this level
             for file_or_dir in os.listdir(item):
                 if os.path.isfile(os.path.join(item, file_or_dir)):
-                    # remove the leading "."
-                    print(os.path.join(item, file_or_dir)[1:])
+                    # remove the leading "./"
+                    print(os.path.join(item, file_or_dir)[2:])
             continue
 
-        # remove the leading "." and add "**" to the end
-        print(item[1:] + "/**")
+        # remove the leading "./" and add "**" to the end
+        print(item[2:] + "/**")
