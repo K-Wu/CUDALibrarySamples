@@ -46,21 +46,21 @@
  * comments to the code, the above Disclaimer and U.S. Government End
  * Users Notice.
  */
-#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
-#include <cusparseLt.h>        // cusparseLt header
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
+#include <cusparseLt.h>       // cusparseLt header
 #include <utils/helper_string.h>
 
-#include <cstdio>   // printf
-#include <cstdlib>  // std::rand
+#include <cstdio>  // printf
+#include <cstdlib> // std::rand
 
-#define CHECK_CUDA(func)                                                   \
-  {                                                                        \
-    cudaError_t status = (func);                                           \
-    if (status != cudaSuccess) {                                           \
-      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
-             cudaGetErrorString(status), status);                          \
-      return EXIT_FAILURE;                                                 \
-    }                                                                      \
+#define CHECK_CUDA(func)                                                       \
+  {                                                                            \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__,     \
+             cudaGetErrorString(status), status);                              \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
   }
 
 #define CHECK_CUSPARSE(func)                                                   \
@@ -75,7 +75,7 @@
 
 constexpr int EXIT_UNSUPPORTED = 2;
 
-int main(const int argc, const char** argv) {
+int main(const int argc, const char **argv) {
   int major_cc, minor_cc;
   CHECK_CUDA(
       cudaDeviceGetAttribute(&major_cc, cudaDevAttrComputeCapabilityMajor, 0))
@@ -83,10 +83,9 @@ int main(const int argc, const char** argv) {
       cudaDeviceGetAttribute(&minor_cc, cudaDevAttrComputeCapabilityMinor, 0))
   if (!(major_cc == 8 && minor_cc == 0) && !(major_cc == 8 && minor_cc == 6) &&
       !(major_cc == 8 && minor_cc == 9)) {
-    std::printf(
-        "\ncusparseLt is supported only on GPU devices with"
-        " compute capability == 8.0, 8.6, 8.9 current: %d.%d\n\n",
-        major_cc, minor_cc);
+    std::printf("\ncusparseLt is supported only on GPU devices with"
+                " compute capability == 8.0, 8.6, 8.9 current: %d.%d\n\n",
+                major_cc, minor_cc);
     return EXIT_UNSUPPORTED;
   }
   // CLI Input
@@ -134,9 +133,9 @@ int main(const int argc, const char** argv) {
   auto B_size = B_height * ldb * sizeof(__half);
   auto C_size = C_height * ldc * sizeof(__half);
 
-  __half* hA = (__half*)malloc(m * k * sizeof(__half));
-  __half* hB = (__half*)malloc(k * n * sizeof(__half));
-  __half* hC = (__half*)malloc(m * n * sizeof(__half));
+  __half *hA = (__half *)malloc(m * k * sizeof(__half));
+  __half *hB = (__half *)malloc(k * n * sizeof(__half));
+  __half *hC = (__half *)malloc(m * n * sizeof(__half));
   for (int i = 0; i < m * k; i++)
     hA[i] = static_cast<__half>(static_cast<float>(std::rand() % 10));
   for (int i = 0; i < k * n; i++)
@@ -146,11 +145,11 @@ int main(const int argc, const char** argv) {
   //--------------------------------------------------------------------------
   // Device memory management
   __half *dA, *dB, *dC, *dD, *dA_compressed;
-  int* d_valid;
-  CHECK_CUDA(cudaMalloc((void**)&dA, A_size))
-  CHECK_CUDA(cudaMalloc((void**)&dB, B_size))
-  CHECK_CUDA(cudaMalloc((void**)&dC, C_size))
-  CHECK_CUDA(cudaMalloc((void**)&d_valid, sizeof(int)))
+  int *d_valid;
+  CHECK_CUDA(cudaMalloc((void **)&dA, A_size))
+  CHECK_CUDA(cudaMalloc((void **)&dB, B_size))
+  CHECK_CUDA(cudaMalloc((void **)&dC, C_size))
+  CHECK_CUDA(cudaMalloc((void **)&d_valid, sizeof(int)))
   dD = dC;
 
   CHECK_CUDA(cudaMemcpy(dA, hA, A_size, cudaMemcpyHostToDevice))
@@ -211,9 +210,8 @@ int main(const int argc, const char** argv) {
                              cudaMemcpyDeviceToHost, stream))
   CHECK_CUDA(cudaStreamSynchronize(stream))
   if (is_valid != 0) {
-    std::printf(
-        "!!!! The matrix has been pruned in a wrong way. "
-        "cusparseLtMatmul will not provide correct results\n");
+    std::printf("!!!! The matrix has been pruned in a wrong way. "
+                "cusparseLtMatmul will not provide correct results\n");
     return EXIT_FAILURE;
   }
 
@@ -222,11 +220,11 @@ int main(const int argc, const char** argv) {
   //--------------------------------------------------------------------------
   // Compress the A matrix
   size_t compressed_size, compressed_buffer_size;
-  void* dA_compressedBuffer;
+  void *dA_compressedBuffer;
   CHECK_CUSPARSE(cusparseLtSpMMACompressedSize(&handle, &plan, &compressed_size,
                                                &compressed_buffer_size))
-  CHECK_CUDA(cudaMalloc((void**)&dA_compressed, compressed_size))
-  CHECK_CUDA(cudaMalloc((void**)&dA_compressedBuffer, compressed_buffer_size))
+  CHECK_CUDA(cudaMalloc((void **)&dA_compressed, compressed_size))
+  CHECK_CUDA(cudaMalloc((void **)&dA_compressedBuffer, compressed_buffer_size))
 
   CHECK_CUSPARSE(cusparseLtSpMMACompress(&handle, &plan, dA, dA_compressed,
                                          dA_compressedBuffer, stream))
@@ -234,7 +232,7 @@ int main(const int argc, const char** argv) {
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search the best kernel
   int num_streams = 0;
-  cudaStream_t* streams = nullptr;
+  cudaStream_t *streams = nullptr;
   if (tune_flag) {
     CHECK_CUSPARSE(cusparseLtMatmulSearch(&handle, &plan, &alpha, dA_compressed,
                                           dB, &beta, dC, dD, nullptr, streams,
@@ -251,8 +249,8 @@ int main(const int argc, const char** argv) {
   CHECK_CUSPARSE(cusparseLtMatmulPlanInit(&handle, &plan, &matmul, &alg_sel))
 
   CHECK_CUSPARSE(cusparseLtMatmulGetWorkspace(&handle, &plan, &workspace_size))
-  void* d_workspace;
-  CHECK_CUDA(cudaMalloc((void**)&d_workspace, workspace_size))
+  void *d_workspace;
+  CHECK_CUDA(cudaMalloc((void **)&d_workspace, workspace_size))
 
   CHECK_CUDA(cudaEventRecord(after_workspace_alloc))
 
@@ -326,11 +324,11 @@ int main(const int argc, const char** argv) {
       for (int k1 = 0; k1 < k; k1++) {
         auto posA = (A_std_layout) ? i * lda + k1 : i + k1 * lda;
         auto posB = (B_std_layout) ? k1 * ldb + j : k1 + j * ldb;
-        sum += static_cast<float>(hA[posA]) *  // [i][k]
-               static_cast<float>(hB[posB]);   // [k][j]
+        sum += static_cast<float>(hA[posA]) * // [i][k]
+               static_cast<float>(hB[posB]);  // [k][j]
       }
       auto posC = (is_rowmajor) ? i * ldc + j : i + j * ldc;
-      hC_result[posC] = sum;  // [i][j]
+      hC_result[posC] = sum; // [i][j]
     }
   }
   // host-device comparison
