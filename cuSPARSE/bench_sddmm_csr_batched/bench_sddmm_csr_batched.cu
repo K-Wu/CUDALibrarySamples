@@ -54,6 +54,8 @@
 #include <utils/generate_random_data.h>
 #include <utils/helper_string.h>
 
+#include <chrono>
+
 #define CHECK_CUDA(func)                                                   \
   {                                                                        \
     cudaError_t status = (func);                                           \
@@ -221,16 +223,43 @@ int main(const int argc, const char **argv) {
       CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT, &bufferSize))
   CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
 
+  // TODO: add option to control if preprocess is enabled
   // execute preprocess (optional)
   CHECK_CUSPARSE(cusparseSDDMM_preprocess(
       handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
       CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
       CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT, dBuffer))
+
   // execute SpMM
+  // We nest the cuda event timing with std::chrono to make sure the cuda event
+  // is getting correct results, we will use the cuda event timing results and
+  // ignore the std::chrono results
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
+  cudaEvent_t start, stop;
+  CHECK_CUDA(cudaEventCreate(&start));
+  CHECK_CUDA(cudaEventCreate(&stop));
+  CHECK_CUDA(cudaDeviceSynchronize());
+
+  beg = std::chrono::system_clock::now();
+  CHECK_CUDA(cudaEventRecord(start));
+
   CHECK_CUSPARSE(cusparseSDDMM(handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                                CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA,
                                matB, &beta, matC, CUDA_R_32F,
                                CUSPARSE_SDDMM_ALG_DEFAULT, dBuffer))
+  CHECK_CUDA(cudaEventRecord(stop));
+  CHECK_CUDA(cudaDeviceSynchronize());
+  end = std::chrono::system_clock::now();
+  float elapsed_time = 0.0f;
+  CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
+  printf("cusparseSDDMM time (ms): %f\n", elapsed_time);
+  printf("throughput (GFLOPS): %f\n",
+         (2.0 * A_num_rows * B_num_cols * A_num_cols * num_batches) /
+             (elapsed_time / 1000.0) / 1e9);
+  printf(
+      "[DEBUG] cusparseSDDMM chrono time (microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
+
   // destroy matrix/vector descriptors
   CHECK_CUSPARSE(cusparseDestroyDnMat(matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(matB))

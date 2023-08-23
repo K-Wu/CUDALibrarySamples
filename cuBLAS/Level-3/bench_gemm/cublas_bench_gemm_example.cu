@@ -141,14 +141,18 @@ int main(const int argc, const char *argv[]) {
                              cudaMemcpyHostToDevice, stream));
 
   /* step 3: compute */
-  // std::chrono::time_point<std::chrono::system_clock> start, end;
+  // We nest the cuda event timing with std::chrono to make sure the cuda event
+  // is getting correct results, we will use the cuda event timing results and
+  // ignore the std::chrono results
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
   cudaEvent_t start, stop;
   CUDA_CHECK(cudaEventCreate(&start));
   CUDA_CHECK(cudaEventCreate(&stop));
-
   CUDA_CHECK(cudaDeviceSynchronize());
   CUDA_CHECK(cudaStreamSynchronize(stream));
   CUDA_CHECK(cudaDeviceSynchronize());
+
+  beg = std::chrono::system_clock::now();
 
   CUDA_CHECK(cudaEventRecord(start, stream));
 
@@ -157,15 +161,15 @@ int main(const int argc, const char *argv[]) {
   CUDA_CHECK(cudaEventRecord(stop, stream));
   CUDA_CHECK(cudaStreamSynchronize(stream));
   CUDA_CHECK(cudaDeviceSynchronize());
-  // end = std::chrono::system_clock::now();
+  end = std::chrono::system_clock::now();
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cublas<X>gemm time (ms): %f\n", elapsed_time);
   printf("throughput (GFLOPS): %f\n",
          (2.0 * m * n * k) / (elapsed_time / 1000.0) / 1e9);
-  // printf("cublas<X>gemm time (microseconds): %ld\n",
-  //        std::chrono::duration_cast<std::chrono::microseconds>(end -
-  //        start).count());
+  printf(
+      "[DEBUG] cublas<X>gemm chrono time (microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 
   /* step 4: copy data to host */
   CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(),

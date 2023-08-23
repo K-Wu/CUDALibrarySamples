@@ -54,7 +54,8 @@
 #include <cusp/csr_matrix.h>  // cusp::csr_matrix
 #include <utils/generate_random_data.h>
 #include <utils/helper_string.h>
-// #include <chrono>
+
+#include <chrono>
 
 #define CHECK_CUDA(func)                                                   \
   {                                                                        \
@@ -235,10 +236,34 @@ int main(const int argc, const char **argv) {
   CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
 
   // execute SpMM
+  // We nest the cuda event timing with std::chrono to make sure the cuda event
+  // is getting correct results, we will use the cuda event timing results and
+  // ignore the std::chrono results
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
+  cudaEvent_t start, stop;
+  CHECK_CUDA(cudaEventCreate(&start));
+  CHECK_CUDA(cudaEventCreate(&stop));
+  CHECK_CUDA(cudaDeviceSynchronize());
+
+  beg = std::chrono::system_clock::now();
+  CHECK_CUDA(cudaEventRecord(start));
   CHECK_CUSPARSE(cusparseSpMM(handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                               CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA,
                               matB, &beta, matC, CUDA_R_32F,
                               CUSPARSE_SPMM_CSR_ALG2, dBuffer))
+  CHECK_CUDA(cudaEventRecord(stop));
+  CHECK_CUDA(cudaEventSynchronize(stop));
+  end = std::chrono::system_clock::now();
+
+  float elapsed_time = 0.0f;
+  CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
+  printf("elapsed time (ms): %f\n", elapsed_time);
+  float throughput =
+      2.0 * A_nnz * B_num_cols * num_batches / (elapsed_time / 1000.0) / 1e9;
+  printf("throughput (GFLOPS): %f\n", throughput);
+  printf(
+      "[DEBUG] chrono time (microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 
   // destroy matrix/vector descriptors
   CHECK_CUSPARSE(cusparseDestroySpMat(matA))
