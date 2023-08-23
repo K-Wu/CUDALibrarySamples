@@ -1,6 +1,10 @@
 .vscode/
 *_example
 !*_example/
+bench_spmm_csr_batched
+!bench_spmm_csr_batched/
+bench_sddmm_csr_batched
+!bench_sddmm_csr_batched/
 bench_sddmm_csr
 !bench_sddmm_csr/
 bench_sparse2dense_csr
