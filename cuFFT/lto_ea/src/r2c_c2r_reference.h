@@ -30,7 +30,8 @@
 
 #include "common.h"
 
-int reference_r2c_window_c2r(unsigned batches, unsigned signal_size, unsigned window_size, float* input_signals, float* output_signals);
+int reference_r2c_window_c2r(unsigned batches, unsigned signal_size,
+                             unsigned window_size, float *input_signals,
+                             float *output_signals);
 
 #endif // R2C_C2R_REFERENCE__H_
-
