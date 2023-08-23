@@ -22,6 +22,8 @@ if __name__ == "__main__":
             or (item.startswith("./3rdparty") and not item.startswith("./3rdparty/"))
             or "/bench_" in item
             or "cuSPARSELt/matmul_bench" in item
+            or "cuSPARSELt/matmul_minimal" in item
+            or "cuSPARSELt/matmul_playground" in item
             or "cuSPARSE/spgemm_reuse" in item
         ):
             continue
