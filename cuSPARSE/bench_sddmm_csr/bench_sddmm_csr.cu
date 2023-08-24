@@ -82,10 +82,12 @@ int main(const int argc, const char **argv) {
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
   float C_sparsity = getCmdLineArgumentFloat(argc, argv, "C_sparsity");
-  if (argc != 5) {
+  bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
+  if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
+      C_sparsity == 0) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--C_sparsity=0.##\n",
+        "--C_sparsity=0.## [--enable_preprocess]\n",
         argv[0]);
     return EXIT_FAILURE;
   }
@@ -180,11 +182,12 @@ int main(const int argc, const char **argv) {
 
   // TODO: add option to control if preprocess is enabled
   // execute preprocess (optional)
-  CHECK_CUSPARSE(cusparseSDDMM_preprocess(
-      handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-      CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
-      CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT, dBuffer))
-
+  if (enable_preprocess) {
+    CHECK_CUSPARSE(cusparseSDDMM_preprocess(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
+        CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT, dBuffer))
+  }
   // execute SpMM
   // We nest the cuda event timing with std::chrono to make sure the cuda event
   // is getting correct results, we will use the cuda event timing results and
