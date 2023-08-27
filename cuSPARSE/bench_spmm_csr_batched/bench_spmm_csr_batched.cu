@@ -163,12 +163,12 @@ int main(const int argc, const char **argv) {
   // Device memory management
   int *dA_csrOffsets, *dA_columns;
   float *dA_values, *dB, *dC;
-  CHECK_CUDA(
-      cudaMalloc((void **)&dA_csrOffsets, (A_num_rows + 1) * sizeof(int)))
-  CHECK_CUDA(
-      cudaMalloc((void **)&dA_columns, A_nnz * num_batches * sizeof(int)))
-  CHECK_CUDA(
-      cudaMalloc((void **)&dA_values, A_nnz * num_batches * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dA_csrOffsets,
+                        (A_num_rows + 1) * sizeof(int) * num_batches))
+  CHECK_CUDA(cudaMalloc((void **)&dA_columns,
+                        A_nnz * num_batches * sizeof(int) * num_batches))
+  CHECK_CUDA(cudaMalloc((void **)&dA_values,
+                        A_nnz * num_batches * sizeof(float) * num_batches))
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * num_batches * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dC, C_size * num_batches * sizeof(float)))
 

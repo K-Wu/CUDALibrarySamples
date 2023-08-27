@@ -156,11 +156,12 @@ int main(const int argc, const char **argv) {
   float *dC_values, *dB, *dA;
   CHECK_CUDA(cudaMalloc((void **)&dA, A_size * num_batches * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * num_batches * sizeof(float)))
-  CHECK_CUDA(cudaMalloc((void **)&dC_offsets, (A_num_rows + 1) * sizeof(int)))
-  CHECK_CUDA(
-      cudaMalloc((void **)&dC_columns, C_nnz * num_batches * sizeof(int)))
-  CHECK_CUDA(
-      cudaMalloc((void **)&dC_values, C_nnz * num_batches * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dC_offsets,
+                        (A_num_rows + 1) * sizeof(int) * num_batches))
+  CHECK_CUDA(cudaMalloc((void **)&dC_columns,
+                        C_nnz * num_batches * sizeof(int) * num_batches))
+  CHECK_CUDA(cudaMalloc((void **)&dC_values,
+                        C_nnz * num_batches * sizeof(float) * num_batches))
 
   for (int idx = 0; idx < num_batches; idx++) {
     CHECK_CUDA(cudaMemcpy(dC_offsets + idx * (A_num_rows + 1),
@@ -256,7 +257,7 @@ int main(const int argc, const char **argv) {
   end = std::chrono::system_clock::now();
   float elapsed_time = 0.0f;
   CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
-  printf("cusparseSDDMM time (ms): %f\n", elapsed_time);
+  printf("cusparseSDDMM elapsed time (ms): %f\n", elapsed_time);
   printf("throughput (GFLOPS): %f\n",
          (2.0 * A_num_rows * B_num_cols * A_num_cols * num_batches) /
              (elapsed_time / 1000.0) / 1e9);
