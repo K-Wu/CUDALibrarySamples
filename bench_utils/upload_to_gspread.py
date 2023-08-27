@@ -106,7 +106,9 @@ def extract_results_from_folder(path, file_extraction_func):
     return all_names_and_info
 
 
-def update_gspread(entries, target_sheet_url, target_gid, cell_range=None):
+def open_worksheet(target_sheet_url: str, target_gid: str):
+    if target_gid != "0":
+        raise NotImplementedError("To avoid data loss, only gid=0 is supported for now")
     gc = gspread.service_account()
     sh = gc.open_by_url(target_sheet_url)
     sheet_data = sh.fetch_sheet_metadata()
@@ -119,7 +121,26 @@ def update_gspread(entries, target_sheet_url, target_gid, cell_range=None):
         ws = Worksheet(sh, item["properties"])
     except (StopIteration, KeyError):
         raise WorksheetNotFound(target_gid)
+    return ws
 
+
+def create_worksheet(target_sheet_url: str, title: str, retry=False) -> Worksheet:
+    gc = gspread.service_account()
+    sh = gc.open_by_url(target_sheet_url)
+    title_suffix = ""
+    # when retry is True, we will ask user to specify a suffix if the title already exists
+    if retry:
+        while True:
+            if (title + title_suffix)[:100] in [ws.title for ws in sh.worksheets()]:
+                # ask user to specify a suffix
+                title_suffix = input("title already exists, please specify a suffix:")
+            else:
+                break
+
+    return sh.add_worksheet(title=title + title_suffix, rows=100, cols=20)
+
+
+def update_gspread(entries, ws: Worksheet, cell_range=None):
     if cell_range is None:
         # start from A1
         cell_range = "A1:"
@@ -131,9 +152,12 @@ def update_gspread(entries, target_sheet_url, target_gid, cell_range=None):
 
 
 if __name__ == "__main__":
-    with open("/home/kunww/.config/gspread/gpu_microbenchmark.url") as fd:
+    with open(
+        "/home/" + os.getlogin() + "/.config/gspread/gpu_microbenchmark.url"
+    ) as fd:
         url = fd.readlines()[0].strip()
     print(url)
+    ws = open_worksheet(url, "300213523")
     update_gspread(
         [
             [
@@ -157,15 +181,14 @@ if __name__ == "__main__":
             find_latest_subdirectory("./artifacts", "benchmark_cublasLt_spmm"),
             extract_cusparselt_result,
         ),
-        url,
-        "300213523",
+        ws,
     )
+    ws = open_worksheet(url, "1193553658")
     update_gspread(
         [["m", "n", "k", "NO_OTHER_FLAG", "total time(ms)"]]
         + extract_results_from_folder(
             find_latest_subdirectory("./artifacts", "benchmark_gemm"),
             extract_gemm_result,
         ),
-        url,
-        "1193553658",
+        ws2,
     )
