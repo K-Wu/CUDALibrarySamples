@@ -21,7 +21,7 @@ workloads = {
         "extra_flags": [""],
         "mnk": [*gen_m_n_k(5, 16)],
     },
-    "cublasLt_spmm": {
+    "cusparseLt_spmm": {
         "path": "cuSPARSELt/matmul_bench/matmul_bench",
         "extra_flags": ["--tune", ""],
         "mnk": [*gen_m_n_k(5, 16)],

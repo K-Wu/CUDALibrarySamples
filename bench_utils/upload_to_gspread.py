@@ -13,7 +13,7 @@ def find_latest_subdirectory(root, prefix):
 
 
 def extract_info_from(filename):
-    # artifacts/benchmark_cublasLt_spmm_202306160108/cublasLt_spmm_32_16_32_--tune.txt
+    # artifacts/benchmark_cusparseLt_spmm_202306160108/cusparseLt_spmm_32_16_32_--tune.txt
     info = filename[:-4].split("_")
     # skip the first few name components and start from the m, n, k
     for idx, entry in enumerate(info):
@@ -157,6 +157,8 @@ if __name__ == "__main__":
     ) as fd:
         url = fd.readlines()[0].strip()
     print(url)
+
+    # Upload cuspoarseLt results to google sheet
     ws = open_worksheet(url, "300213523")
     update_gspread(
         [
@@ -178,11 +180,13 @@ if __name__ == "__main__":
             ]
         ]
         + extract_results_from_folder(
-            find_latest_subdirectory("./artifacts", "benchmark_cublasLt_spmm"),
+            find_latest_subdirectory("./artifacts", "benchmark_cusparseLt_spmm"),
             extract_cusparselt_result,
         ),
         ws,
     )
+
+    # Upload cublas results to google sheet
     ws = open_worksheet(url, "1193553658")
     update_gspread(
         [["m", "n", "k", "NO_OTHER_FLAG", "total time(ms)"]]
