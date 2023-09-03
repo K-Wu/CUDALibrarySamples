@@ -352,6 +352,3 @@ name = "cxx"
 
 [[transformers]]
 name = "clang-format"
-
-[[transformers]]
-name = "black"
