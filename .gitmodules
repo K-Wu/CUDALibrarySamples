@@ -4,3 +4,6 @@
 [submodule "3rdparty/libnpy"]
 	path = 3rdparty/libnpy
 	url = https://github.com/llohse/libnpy
+[submodule "bench_utils/nsight_utils"]
+	path = bench_utils/nsight_utils
+	url = https://github.com/K-Wu/HET_nsight_utils

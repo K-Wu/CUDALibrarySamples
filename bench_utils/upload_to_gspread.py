@@ -1,6 +1,7 @@
-import gspread
-from gspread import Worksheet, WorksheetNotFound
-from gspread.utils import finditem
+from .nsight_utils.upload_benchmark_results import (
+    open_worksheet,
+    update_gspread,
+)
 import os
 
 
@@ -106,49 +107,51 @@ def extract_results_from_folder(path, file_extraction_func):
     return all_names_and_info
 
 
-def open_worksheet(target_sheet_url: str, target_gid: str):
-    if target_gid != "0":
-        raise NotImplementedError("To avoid data loss, only gid=0 is supported for now")
-    gc = gspread.service_account()
-    sh = gc.open_by_url(target_sheet_url)
-    sheet_data = sh.fetch_sheet_metadata()
+# TODO: remove the following code as they are now provided by nsight_utils
 
-    try:
-        item = finditem(
-            lambda x: str(x["properties"]["sheetId"]) == target_gid,
-            sheet_data["sheets"],
-        )
-        ws = Worksheet(sh, item["properties"])
-    except (StopIteration, KeyError):
-        raise WorksheetNotFound(target_gid)
-    return ws
+# def open_worksheet(target_sheet_url: str, target_gid: str):
+#     if target_gid != "0":
+#         raise NotImplementedError("To avoid data loss, only gid=0 is supported for now")
+#     gc = gspread.service_account()
+#     sh = gc.open_by_url(target_sheet_url)
+#     sheet_data = sh.fetch_sheet_metadata()
 
-
-def create_worksheet(target_sheet_url: str, title: str, retry=False) -> Worksheet:
-    gc = gspread.service_account()
-    sh = gc.open_by_url(target_sheet_url)
-    title_suffix = ""
-    # when retry is True, we will ask user to specify a suffix if the title already exists
-    if retry:
-        while True:
-            if (title + title_suffix)[:100] in [ws.title for ws in sh.worksheets()]:
-                # ask user to specify a suffix
-                title_suffix = input("title already exists, please specify a suffix:")
-            else:
-                break
-
-    return sh.add_worksheet(title=title + title_suffix, rows=100, cols=20)
+#     try:
+#         item = finditem(
+#             lambda x: str(x["properties"]["sheetId"]) == target_gid,
+#             sheet_data["sheets"],
+#         )
+#         ws = Worksheet(sh, item["properties"])
+#     except (StopIteration, KeyError):
+#         raise WorksheetNotFound(target_gid)
+#     return ws
 
 
-def update_gspread(entries, ws: Worksheet, cell_range=None):
-    if cell_range is None:
-        # start from A1
-        cell_range = "A1:"
-        num_rows = len(entries)
-        num_cols = max([len(row) for row in entries])
-        cell_range += gspread.utils.rowcol_to_a1(num_rows, num_cols)
+# def create_worksheet(target_sheet_url: str, title: str, retry=False) -> Worksheet:
+#     gc = gspread.service_account()
+#     sh = gc.open_by_url(target_sheet_url)
+#     title_suffix = ""
+#     # when retry is True, we will ask user to specify a suffix if the title already exists
+#     if retry:
+#         while True:
+#             if (title + title_suffix)[:100] in [ws.title for ws in sh.worksheets()]:
+#                 # ask user to specify a suffix
+#                 title_suffix = input("title already exists, please specify a suffix:")
+#             else:
+#                 break
 
-    ws.update(cell_range, entries)
+#     return sh.add_worksheet(title=title + title_suffix, rows=100, cols=20)
+
+
+# def update_gspread(entries, ws: Worksheet, cell_range=None):
+#     if cell_range is None:
+#         # start from A1
+#         cell_range = "A1:"
+#         num_rows = len(entries)
+#         num_cols = max([len(row) for row in entries])
+#         cell_range += gspread.utils.rowcol_to_a1(num_rows, num_cols)
+
+#     ws.update(cell_range, entries)
 
 
 if __name__ == "__main__":
@@ -180,14 +183,16 @@ if __name__ == "__main__":
             ]
         ]
         + extract_results_from_folder(
-            find_latest_subdirectory("./artifacts", "benchmark_cusparseLt_spmm"),
+            find_latest_subdirectory(
+                "./artifacts", "benchmark_cusparseLt_spmm"
+            ),
             extract_cusparselt_result,
         ),
         ws,
     )
 
     # Upload cublas results to google sheet
-    ws = open_worksheet(url, "1193553658")
+    ws2 = open_worksheet(url, "1193553658")
     update_gspread(
         [["m", "n", "k", "NO_OTHER_FLAG", "total time(ms)"]]
         + extract_results_from_folder(
