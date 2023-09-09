@@ -57,13 +57,13 @@ endif()
 # Global CXX/CUDA flags
 
 # Global CXX flags/options
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Global CUDA CXX flags/options
 set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-set(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_EXTENSIONS OFF)
 
@@ -79,6 +79,7 @@ include(../../cmake/cublas_example.cmake)
 include_directories("${CMAKE_SOURCE_DIR}/../../utils")
 include_directories("${CMAKE_SOURCE_DIR}/../../../3rdparty/")
 include_directories("${CMAKE_SOURCE_DIR}/../../../3rdparty/cusplibrary")
+include_directories("${CMAKE_SOURCE_DIR}/../../../3rdparty/libnpy/include")
 
 
 add_cublas_example(cublas_examples "cublas_${ROUTINE}_example" cublas_${ROUTINE}_example.cu)

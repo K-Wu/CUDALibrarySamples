@@ -49,9 +49,10 @@
 
 #include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
 #include <cusp/csr_matrix.h>   // cusp::csr_matrix
-#include <cusparse.h>          // cusparseSpMM
-#include <stdio.h>             // printf
-#include <stdlib.h>            // EXIT_FAILURE
+#include <cusp/io/matrix_market.h>
+#include <cusparse.h>  // cusparseSpMM
+#include <stdio.h>     // printf
+#include <stdlib.h>    // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 // renamed this source file to .cpp to allow cstddef. Source:
 // https://talk.pokitto.com/t/sudden-error-cstddef-no-such-file-or-directory/711/4
@@ -61,6 +62,8 @@
 #include <utils/helper_string.h>
 
 #include <chrono>
+
+#include "npy.hpp"
 
 #define CHECK_CUDA(func)                                                   \
   {                                                                        \
@@ -88,10 +91,12 @@ int main(const int argc, const char **argv) {
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
   float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
-  if (argc != 5) {
+  bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
+  if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
+      A_sparsity == 0.0f) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--A_sparsity=0.##\n",
+        "--A_sparsity=0.## [--enable_dump]\n",
         argv[0]);
     return EXIT_FAILURE;
   }
@@ -120,6 +125,10 @@ int main(const int argc, const char **argv) {
   //                           0.0f, 0.0f, 0.0f, 0.0f,
   //                           0.0f, 0.0f, 0.0f, 0.0f };
   float *hB = (float *)malloc(sizeof(float) * B_size);
+  float *hC;
+  if (enable_dump) {
+    hC = (float *)malloc(sizeof(float) * C_size);
+  }
   generate_random_matrix(hB, B_size);
   cusp::csr_matrix<int, float, cusp::host_memory> hA =
       generate_random_sparse_matrix<
@@ -219,24 +228,53 @@ int main(const int argc, const char **argv) {
   CHECK_CUSPARSE(cusparseDestroyDnMat(matB))
   CHECK_CUSPARSE(cusparseDestroyDnMat(matC))
   CHECK_CUSPARSE(cusparseDestroy(handle))
-  //--------------------------------------------------------------------------
-  // device result check
-  // CHECK_CUDA( cudaMemcpy(hC, dC, C_size * sizeof(float),
-  //                        cudaMemcpyDeviceToHost) )
-  // int correct = 1;
-  // for (int i = 0; i < A_num_rows; i++) {
-  //     for (int j = 0; j < B_num_cols; j++) {
-  //         if (hC[i + j * ldc] != hC_result[i + j * ldc]) {
-  //             correct = 0; // direct floating point comparison is not
-  //             reliable break;
-  //         }
-  //     }
-  // }
-  // if (correct)
-  //     printf("spmm_csr_example test PASSED\n");
-  // else
-  //     printf("spmm_csr_example test FAILED: wrong result\n");
-  //--------------------------------------------------------------------------
+
+  if (enable_dump) {
+    CHECK_CUDA(
+        cudaMemcpy(hC, dC, C_size * sizeof(float), cudaMemcpyDeviceToHost))
+    // Get current timestamp
+    std::time_t t = std::time(nullptr);
+    std::tm tm = *std::localtime(&t);
+    char time_str[64];
+    std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
+    // Store m, n, k to a txt and store A, B, C to a numpy file
+    FILE *fp = fopen(
+        (std::string("cusparse_bench_spmm_csr") + time_str + ".txt").c_str(),
+        "w");
+    assert(fp != nullptr);
+    fprintf(fp, "%d %d %d %d %f\n", A_num_rows, A_num_cols, B_num_cols, A_nnz,
+            A_sparsity);
+    fclose(fp);
+    cusp::io::write_matrix_market_file(
+        hA, std::string("cusparse_bench_spmm_csr") + time_str + "_A.mtx");
+
+    unsigned long b_shape[2] = {ldb, B_num_cols};
+    unsigned long c_shape[2] = {ldc, B_num_cols};
+    npy::SaveArrayAsNumpy(
+        std::string("cusparse_bench_spmm_csr") + time_str + "_B.npy", false, 2,
+        b_shape, hB);
+    npy::SaveArrayAsNumpy(
+        std::string("cusparse_bench_spmm_csr") + time_str + "_C.npy", false, 2,
+        c_shape, hC);
+    free(hC);
+
+    //--------------------------------------------------------------------------
+    // device result check
+    // int correct = 1;
+    // for (int i = 0; i < A_num_rows; i++) {
+    //     for (int j = 0; j < B_num_cols; j++) {
+    //         if (hC[i + j * ldc] != hC_result[i + j * ldc]) {
+    //             correct = 0; // direct floating point comparison is not
+    //             reliable break;
+    //         }
+    //     }
+    // }
+    // if (correct)
+    //     printf("spmm_csr_example test PASSED\n");
+    // else
+    //     printf("spmm_csr_example test FAILED: wrong result\n");
+    //--------------------------------------------------------------------------
+  }
   // device memory deallocation
   CHECK_CUDA(cudaFree(dBuffer))
   // CHECK_CUDA( cudaFree(dA_csrOffsets) )

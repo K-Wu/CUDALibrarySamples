@@ -1,3 +1,6 @@
 [submodule "3rdparty/cusplibrary"]
 	path = 3rdparty/cusplibrary
 	url = https://github.com/cusplibrary/cusplibrary
+[submodule "3rdparty/libnpy"]
+	path = 3rdparty/libnpy
+	url = https://github.com/llohse/libnpy

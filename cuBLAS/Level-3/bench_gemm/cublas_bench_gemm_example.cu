@@ -60,6 +60,7 @@
 #include <vector>
 
 #include "cublas_utils.h"
+#include "npy.hpp"
 
 using data_type = float;
 
@@ -78,8 +79,9 @@ int main(const int argc, const char *argv[]) {
   int m = getCmdLineArgumentInt(argc, argv, "m");
   int n = getCmdLineArgumentInt(argc, argv, "n");
   int k = getCmdLineArgumentInt(argc, argv, "k");
-  if (argc != 4) {
-    printf("Usage: %s --m=## --n=## --k=##\n", argv[0]);
+  bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
+  if (m == 0 || n == 0 || k == 0) {
+    printf("Usage: %s --m=## --n=## --k=## [--enable_dump]\n", argv[0]);
     return EXIT_FAILURE;
   }
   int lda = m;
@@ -171,21 +173,44 @@ int main(const int argc, const char *argv[]) {
       "[DEBUG] cublas<X>gemm chrono time (microseconds): %ld\n",
       std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 
-  /* step 4: copy data to host */
-  CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(),
-                             cudaMemcpyDeviceToHost, stream));
+  if (enable_dump) {
+    /* step 4: copy data to host */
+    CUDA_CHECK(cudaMemcpyAsync(C.data(), d_C, sizeof(data_type) * C.size(),
+                               cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
-  CUDA_CHECK(cudaStreamSynchronize(stream));
-
-  /*
-   *   C = | 23.0 | 31.0 |
-   *       | 34.0 | 46.0 |
-   */
-
-  if (0) {
-    printf("C\n");
-    print_matrix(m, n, C.data(), ldc);
-    printf("=====\n");
+    if (0) {
+      /*
+       *   C = | 23.0 | 31.0 |
+       *       | 34.0 | 46.0 |
+       */
+      printf("C\n");
+      print_matrix(m, n, C.data(), ldc);
+      printf("=====\n");
+    }
+    // Get current timestamp
+    std::time_t t = std::time(nullptr);
+    std::tm tm = *std::localtime(&t);
+    char time_str[64];
+    std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
+    // Store m, n, k to a txt and store A, B, C to a numpy file
+    FILE *fp = fopen(
+        (std::string("cublas_bench_gemm") + time_str + ".txt").c_str(), "w");
+    assert(fp != nullptr);
+    fprintf(fp, "%d %d %d\n", m, n, k);
+    fclose(fp);
+    unsigned long a_shape[2] = {lda, k};
+    unsigned long b_shape[2] = {ldb, n};
+    unsigned long c_shape[2] = {m, n};
+    npy::SaveArrayAsNumpy(
+        std::string("cublas_bench_gemm.C") + time_str + ".npy", false, 2,
+        c_shape, C);
+    npy::SaveArrayAsNumpy(
+        std::string("cublas_bench_gemm.A") + time_str + ".npy", false, 2,
+        a_shape, A);
+    npy::SaveArrayAsNumpy(
+        std::string("cublas_bench_gemm.B") + time_str + ".npy", false, 2,
+        b_shape, B);
   }
 
   /* free resources */
