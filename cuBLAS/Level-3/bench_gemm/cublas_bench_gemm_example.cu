@@ -195,7 +195,7 @@ int main(const int argc, const char *argv[]) {
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
     // Store m, n, k to a txt and store A, B, C to a numpy file
     FILE *fp = fopen(
-        (std::string("cublas_bench_gemm") + time_str + ".txt").c_str(), "w");
+        (std::string("cublas_bench_gemm.") + time_str + ".txt").c_str(), "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d\n", m, n, k);
     fclose(fp);
@@ -203,13 +203,13 @@ int main(const int argc, const char *argv[]) {
     unsigned long b_shape[2] = {ldb, n};
     unsigned long c_shape[2] = {m, n};
     npy::SaveArrayAsNumpy(
-        std::string("cublas_bench_gemm.C") + time_str + ".npy", false, 2,
+        std::string("cublas_bench_gemm.") + time_str + ".C.npy", false, 2,
         c_shape, C);
     npy::SaveArrayAsNumpy(
-        std::string("cublas_bench_gemm.A") + time_str + ".npy", false, 2,
+        std::string("cublas_bench_gemm.") + time_str + ".A.npy", false, 2,
         a_shape, A);
     npy::SaveArrayAsNumpy(
-        std::string("cublas_bench_gemm.B") + time_str + ".npy", false, 2,
+        std::string("cublas_bench_gemm.") + time_str + ".B.npy", false, 2,
         b_shape, B);
   }
 

@@ -239,22 +239,22 @@ int main(const int argc, const char **argv) {
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
     // Store m, n, k to a txt and store A, B, C to a numpy file
     FILE *fp = fopen(
-        (std::string("cusparse_bench_spmm_csr") + time_str + ".txt").c_str(),
+        (std::string("cusparse_bench_spmm_csr.") + time_str + ".txt").c_str(),
         "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", A_num_rows, A_num_cols, B_num_cols, A_nnz,
             A_sparsity);
     fclose(fp);
     cusp::io::write_matrix_market_file(
-        hA, std::string("cusparse_bench_spmm_csr") + time_str + "_A.mtx");
+        hA, std::string("cusparse_bench_spmm_csr.") + time_str + ".A.mtx");
 
     unsigned long b_shape[2] = {ldb, B_num_cols};
     unsigned long c_shape[2] = {ldc, B_num_cols};
     npy::SaveArrayAsNumpy(
-        std::string("cusparse_bench_spmm_csr") + time_str + "_B.npy", false, 2,
+        std::string("cusparse_bench_spmm_csr.") + time_str + ".B.npy", false, 2,
         b_shape, hB);
     npy::SaveArrayAsNumpy(
-        std::string("cusparse_bench_spmm_csr") + time_str + "_C.npy", false, 2,
+        std::string("cusparse_bench_spmm_csr.") + time_str + ".C.npy", false, 2,
         c_shape, hC);
     free(hC);
 
