@@ -106,10 +106,9 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (m == 0 || n == 0 || k == 0) {
-    printf(
-        "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...]\n",
-        argv[0]);
+    printf("Usage: %s --m=## --n=## --k=## [--enable_dump] "
+           "[--result_path_and_prefix=...]\n",
+           argv[0]);
     exit(EXIT_FAILURE);
   }
   int lda = m;
@@ -149,14 +148,14 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   CUDA_CHECK(cudaMemcpyAsync(d_B, B.data(), sizeof(data_type) * B.size(),
                              cudaMemcpyHostToDevice, stream));
 
-  BenchGEMMProblemSpec problem_spec = {
-      .m = m,
-      .n = n,
-      .k = k,
-      .enable_dump = enable_dump,
-      .cli_result_path_and_prefix = cli_result_path_and_prefix,
-      .flag_specify_result_path_and_prefix =
-          flag_specify_result_path_and_prefix};
+  BenchGEMMProblemSpec problem_spec = {.m = m,
+                                       .n = n,
+                                       .k = k,
+                                       .enable_dump = enable_dump,
+                                       .cli_result_path_and_prefix =
+                                           cli_result_path_and_prefix,
+                                       .flag_specify_result_path_and_prefix =
+                                           flag_specify_result_path_and_prefix};
   BenchGEMMRuntimeData runtime_data = {.lda = lda,
                                        .ldb = ldb,
                                        .ldc = ldc,
