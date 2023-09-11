@@ -68,12 +68,6 @@ int main_bench_gemm(const int argc, const char *argv[]) {
   cublasHandle_t cublasH = NULL;
   cudaStream_t stream = NULL;
 
-  // const int m = 2;
-  // const int n = 2;
-  // const int k = 2;
-  // const int lda = 2;
-  // const int ldb = 2;
-  // const int ldc = 2;
 
   // Host problem definition
   int m = getCmdLineArgumentInt(argc, argv, "m");
@@ -93,21 +87,12 @@ int main_bench_gemm(const int argc, const char *argv[]) {
   int lda = m;
   int ldb = k;
   int ldc = m;
-  /*
-   *   A = | 1.0 | 2.0 |
-   *       | 3.0 | 4.0 |
-   *
-   *   B = | 5.0 | 6.0 |
-   *       | 7.0 | 8.0 |
-   */
 
   std::srand(unsigned(std::time(nullptr)));
   std::vector<data_type> A(lda * k);
   std::vector<data_type> B(ldb * n);
   std::generate(A.begin(), A.end(), std::rand);
   std::generate(B.begin(), B.end(), std::rand);
-  // const std::vector<data_type> A = {1.0, 2.0, 3.0, 4.0};
-  // const std::vector<data_type> B = {5.0, 6.0, 7.0, 8.0};
   std::vector<data_type> C(m * n);
   const data_type alpha = 1.0;
   const data_type beta = 0.0;
@@ -186,10 +171,6 @@ int main_bench_gemm(const int argc, const char *argv[]) {
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
     if (0) {
-      /*
-       *   C = | 23.0 | 31.0 |
-       *       | 34.0 | 46.0 |
-       */
       printf("C\n");
       print_matrix(m, n, C.data(), ldc);
       printf("=====\n");

@@ -109,7 +109,6 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
   printf("A_sparsity: %f\n", A_sparsity);
 
   // ***** END OF HOST PROBLEM DEFINITION *****
-  // int   A_nnz           = 9;
   int A_nnz = A_num_rows * A_num_cols * A_sparsity;
   int B_num_rows = A_num_cols;
   int ldb = B_num_rows;
@@ -117,16 +116,6 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
   int B_size = ldb * B_num_cols;
   int C_size = ldc * B_num_cols;
   // instantiating data
-  // int   hA_csrOffsets[] = { 0, 3, 4, 7, 9 };
-  // int   hA_columns[]    = { 0, 2, 3, 1, 0, 2, 3, 1, 3 };
-  // float hA_values[]     = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
-  //                           6.0f, 7.0f, 8.0f, 9.0f };
-  // float hB[]            = { 1.0f,  2.0f,  3.0f,  4.0f,
-  //                           5.0f,  6.0f,  7.0f,  8.0f,
-  //                           9.0f, 10.0f, 11.0f, 12.0f };
-  // float hC[]            = { 0.0f, 0.0f, 0.0f, 0.0f,
-  //                           0.0f, 0.0f, 0.0f, 0.0f,
-  //                           0.0f, 0.0f, 0.0f, 0.0f };
   float *hB = (float *)malloc(sizeof(float) * B_size);
   float *hC;
   if (enable_dump) {
@@ -147,26 +136,11 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
   //--------------------------------------------------------------------------
 
   // Device memory management
-  // int   *dA_csrOffsets, *dA_columns;
-  // float *dA_values;
   float *dB, *dC;
-  // CHECK_CUDA( cudaMalloc((void**) &dA_csrOffsets,
-  //                        (A_num_rows + 1) * sizeof(int)) )
-  // CHECK_CUDA( cudaMalloc((void**) &dA_columns, A_nnz * sizeof(int))    )
-  // CHECK_CUDA( cudaMalloc((void**) &dA_values,  A_nnz * sizeof(float))  )
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
 
-  // CHECK_CUDA( cudaMemcpy(dA_csrOffsets, hA_csrOffsets,
-  //                        (A_num_rows + 1) * sizeof(int),
-  //                        cudaMemcpyHostToDevice) )
-  // CHECK_CUDA( cudaMemcpy(dA_columns, hA_columns, A_nnz * sizeof(int),
-  //                        cudaMemcpyHostToDevice) )
-  // CHECK_CUDA( cudaMemcpy(dA_values, hA_values, A_nnz * sizeof(float),
-  //                        cudaMemcpyHostToDevice) )
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
-  // CHECK_CUDA( cudaMemcpy(dC, hC, C_size * sizeof(float),
-  //                        cudaMemcpyHostToDevice) )
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
   //--------------------------------------------------------------------------
   // CUSPARSE APIs
@@ -264,29 +238,9 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
     npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".C.npy", false,
                           2, c_shape, hC);
     free(hC);
-
-    //--------------------------------------------------------------------------
-    // device result check
-    // int correct = 1;
-    // for (int i = 0; i < A_num_rows; i++) {
-    //     for (int j = 0; j < B_num_cols; j++) {
-    //         if (hC[i + j * ldc] != hC_result[i + j * ldc]) {
-    //             correct = 0; // direct floating point comparison is not
-    //             reliable break;
-    //         }
-    //     }
-    // }
-    // if (correct)
-    //     printf("spmm_csr_example test PASSED\n");
-    // else
-    //     printf("spmm_csr_example test FAILED: wrong result\n");
-    //--------------------------------------------------------------------------
   }
   // device memory deallocation
   CHECK_CUDA(cudaFree(dBuffer))
-  // CHECK_CUDA( cudaFree(dA_csrOffsets) )
-  // CHECK_CUDA( cudaFree(dA_columns) )
-  // CHECK_CUDA( cudaFree(dA_values) )
   CHECK_CUDA(cudaFree(dB))
   CHECK_CUDA(cudaFree(dC))
   free(hB);
