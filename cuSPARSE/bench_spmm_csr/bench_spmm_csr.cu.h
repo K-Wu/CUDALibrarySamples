@@ -47,12 +47,12 @@
  * Users Notice.
  */
 #pragma once
-#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
-#include <cusp/csr_matrix.h>   // cusp::csr_matrix
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
+#include <cusp/csr_matrix.h>  // cusp::csr_matrix
 #include <cusp/io/matrix_market.h>
-#include <cusparse.h>  // cusparseSpMM
-#include <stdio.h>     // printf
-#include <stdlib.h>    // EXIT_FAILURE
+#include <cusparse.h> // cusparseSpMM
+#include <stdio.h>    // printf
+#include <stdlib.h>   // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 // renamed this source file to .cpp to allow cstddef. Source:
 // https://talk.pokitto.com/t/sudden-error-cstddef-no-such-file-or-directory/711/4
@@ -65,14 +65,14 @@
 
 #include "npy.hpp"
 
-#define CHECK_CUDA(func)                                                   \
-  {                                                                        \
-    cudaError_t status = (func);                                           \
-    if (status != cudaSuccess) {                                           \
-      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
-             cudaGetErrorString(status), status);                          \
-      return EXIT_FAILURE;                                                 \
-    }                                                                      \
+#define CHECK_CUDA(func)                                                       \
+  {                                                                            \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__,     \
+             cudaGetErrorString(status), status);                              \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
   }
 
 #define CHECK_CUSPARSE(func)                                                   \
@@ -97,10 +97,9 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       A_sparsity == 0.0f) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...]\n",
-        argv[0]);
+    printf("Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+           "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...]\n",
+           argv[0]);
     return EXIT_FAILURE;
   }
   printf("A_num_rows: %d\n", A_num_rows);
@@ -228,8 +227,8 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
     fprintf(fp, "%d %d %d %d %f\n", A_num_rows, A_num_cols, B_num_cols, A_nnz,
             A_sparsity);
     fclose(fp);
-    cusp::io::write_matrix_market_file(
-        hA, std::string(result_path_and_prefix) + ".A.mtx");
+    cusp::io::write_matrix_market_file(hA, std::string(result_path_and_prefix) +
+                                               ".A.mtx");
 
     unsigned long b_shape[2] = {ldb, B_num_cols};
     unsigned long c_shape[2] = {ldc, B_num_cols};

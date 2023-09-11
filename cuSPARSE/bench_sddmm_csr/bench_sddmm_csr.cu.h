@@ -47,24 +47,24 @@
  * Users Notice.
  */
 #pragma once
-#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
 #include <cusp/csr_matrix.h>
-#include <cusparse.h>  // cusparseSpMM
-#include <stdio.h>     // printf
-#include <stdlib.h>    // EXIT_FAILURE
+#include <cusparse.h> // cusparseSpMM
+#include <stdio.h>    // printf
+#include <stdlib.h>   // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 #include <utils/helper_string.h>
 
 #include <chrono>
 
-#define CHECK_CUDA(func)                                                   \
-  {                                                                        \
-    cudaError_t status = (func);                                           \
-    if (status != cudaSuccess) {                                           \
-      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
-             cudaGetErrorString(status), status);                          \
-      return EXIT_FAILURE;                                                 \
-    }                                                                      \
+#define CHECK_CUDA(func)                                                       \
+  {                                                                            \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__,     \
+             cudaGetErrorString(status), status);                              \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
   }
 
 #define CHECK_CUSPARSE(func)                                                   \
@@ -86,10 +86,9 @@ int main_bench_sddmm_csr(const int argc, const char **argv) {
   bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       C_sparsity == 0) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--C_sparsity=0.## [--enable_preprocess]\n",
-        argv[0]);
+    printf("Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+           "--C_sparsity=0.## [--enable_preprocess]\n",
+           argv[0]);
     return EXIT_FAILURE;
   }
   printf("A_num_rows: %d\n", A_num_rows);

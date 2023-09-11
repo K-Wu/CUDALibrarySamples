@@ -68,7 +68,6 @@ int main_bench_gemm(const int argc, const char *argv[]) {
   cublasHandle_t cublasH = NULL;
   cudaStream_t stream = NULL;
 
-
   // Host problem definition
   int m = getCmdLineArgumentInt(argc, argv, "m");
   int n = getCmdLineArgumentInt(argc, argv, "n");
@@ -78,10 +77,9 @@ int main_bench_gemm(const int argc, const char *argv[]) {
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (m == 0 || n == 0 || k == 0) {
-    printf(
-        "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...]\n",
-        argv[0]);
+    printf("Usage: %s --m=## --n=## --k=## [--enable_dump] "
+           "[--result_path_and_prefix=...]\n",
+           argv[0]);
     return EXIT_FAILURE;
   }
   int lda = m;
