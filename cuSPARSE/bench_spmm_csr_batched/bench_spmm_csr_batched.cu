@@ -257,10 +257,10 @@ int main(const int argc, const char **argv) {
 
   float elapsed_time = 0.0f;
   CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
-  printf("elapsed time (ms): %f\n", elapsed_time);
+  printf("cusparseSpMMBatched+CSR elapsed time (ms): %f\n", elapsed_time);
   float throughput =
       2.0 * A_nnz * B_num_cols * num_batches / (elapsed_time / 1000.0) / 1e9;
-  printf("throughput (GFLOPS): %f\n", throughput);
+  printf("cusparseSpMMBatched+CSR throughput (GFLOPS): %f\n", throughput);
   printf(
       "[DEBUG] chrono time (microseconds): %ld\n",
       std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());

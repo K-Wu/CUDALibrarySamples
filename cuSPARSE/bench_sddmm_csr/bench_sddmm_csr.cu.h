@@ -211,8 +211,8 @@ int main_bench_sddmm_csr(const int argc, const char **argv) {
   float elapsed_time = 0.0f;
   CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
 
-  printf("cusparseSDDMM elapsed time (ms): %f\n", elapsed_time);
-  printf("throughput (GFLOPS): %f\n",
+  printf("cusparseSDDMM+CSR elapsed time (ms): %f\n", elapsed_time);
+  printf("cusparseSDDMM+CSR throughput (GFLOPS): %f\n",
          (2.0 * A_num_rows * B_num_cols * A_num_cols) /
              (elapsed_time / 1000.0) / 1e9);
   printf(

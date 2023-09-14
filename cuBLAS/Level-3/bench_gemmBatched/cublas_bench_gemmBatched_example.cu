@@ -209,12 +209,12 @@ int main(const int argc, const char *argv[]) {
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
 
-  printf("cublas<X>gemmBatched elapsed time (ms): %f\n", elapsed_time);
-  printf("throughput (GFLOPS): %f\n",
+  printf("cublasSgemmBatched elapsed time (ms): %f\n", elapsed_time);
+  printf("cublasSgemmBatched throughput (GFLOPS): %f\n",
          (2.0 * m * n * k * batch_count) / (elapsed_time / 1000.0) / 1e9);
-  printf("[DEBUG] cublas<X>gemmBatched chrono time (microseconds): %ld\n",
-         std::chrono::duration_cast<std::chrono::microseconds>(end - beg)
-             .count());
+  printf(
+      "[DEBUG] cublas<X>gemmBatched chrono time (microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 
   /* step 4: copy data to host */
   for (int i = 0; i < batch_count; i++) {

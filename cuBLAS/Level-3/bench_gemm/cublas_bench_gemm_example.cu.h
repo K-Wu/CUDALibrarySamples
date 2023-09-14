@@ -70,6 +70,8 @@ struct BenchGEMMProblemSpec {
   int n;
   int k;
   bool enable_dump;
+  bool enable_timing;
+  bool enable_debug_timing;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
 };
@@ -101,6 +103,9 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   int m = getCmdLineArgumentInt(argc, argv, "m");
   int n = getCmdLineArgumentInt(argc, argv, "n");
   int k = getCmdLineArgumentInt(argc, argv, "k");
+  bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
+  bool enable_debug_timing =
+      checkCmdLineFlag(argc, argv, "enable_debug_timing");
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
@@ -108,7 +113,8 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   if (m == 0 || n == 0 || k == 0) {
     printf(
         "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...]\n",
+        "[--result_path_and_prefix=...] [--enable_timing] "
+        "[--enable_debug_timing]\n",
         argv[0]);
     exit(EXIT_FAILURE);
   }
@@ -154,6 +160,8 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
       .n = n,
       .k = k,
       .enable_dump = enable_dump,
+      .enable_timing = enable_timing,
+      .enable_debug_timing = enable_debug_timing,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix};
@@ -178,8 +186,8 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   return bench_gemm_tuple;
 }
 
-void compute_bench_gemm(BenchGEMMProblemSpec bench_spec,
-                        BenchGEMMRuntimeData bench_data) {
+std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
+    BenchGEMMProblemSpec bench_spec, BenchGEMMRuntimeData bench_data) {
   /* step 3: compute */
   // We nest the cuda event timing with std::chrono to make sure the cuda event
   // is getting correct results, we will use the cuda event timing results and
@@ -192,28 +200,38 @@ void compute_bench_gemm(BenchGEMMProblemSpec bench_spec,
   CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  beg = std::chrono::system_clock::now();
-
-  CUDA_CHECK(cudaEventRecord(start, bench_data.stream));
+  if (bench_spec.enable_debug_timing) {
+    beg = std::chrono::system_clock::now();
+  }
+  if (bench_spec.enable_timing)
+    CUDA_CHECK(cudaEventRecord(start, bench_data.stream));
 
   CUBLAS_CHECK(cublasSgemm(bench_data.cublasH, bench_data.transa,
                            bench_data.transb, bench_spec.m, bench_spec.n,
                            bench_spec.k, &(bench_data.alpha), bench_data.d_A,
                            bench_data.lda, bench_data.d_B, bench_data.ldb,
                            &(bench_data.beta), bench_data.d_C, bench_data.ldc));
-  CUDA_CHECK(cudaEventRecord(stop, bench_data.stream));
+  if (bench_spec.enable_timing)
+    CUDA_CHECK(cudaEventRecord(stop, bench_data.stream));
   CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
   CUDA_CHECK(cudaDeviceSynchronize());
-  end = std::chrono::system_clock::now();
+  if (bench_spec.enable_debug_timing) {
+    end = std::chrono::system_clock::now();
+    printf("[DEBUG] cublas<X>gemm chrono time (microseconds): %ld\n",
+           std::chrono::duration_cast<std::chrono::microseconds>(end - beg)
+               .count());
+  }
+  return std::make_tuple(start, stop);
+}
+
+void print_timing_bench_gemm(cudaEvent_t start, cudaEvent_t stop,
+                             BenchGEMMProblemSpec bench_spec) {
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
-  printf("cublas<X>gemm elapsed time (ms): %f\n", elapsed_time);
-  printf("throughput (GFLOPS): %f\n",
+  printf("cublasSgemm elapsed time (ms): %f\n", elapsed_time);
+  printf("cublasSgemm throughput (GFLOPS): %f\n",
          (2.0 * bench_spec.m * bench_spec.n * bench_spec.k) /
              (elapsed_time / 1000.0) / 1e9);
-  printf(
-      "[DEBUG] cublas<X>gemm chrono time (microseconds): %ld\n",
-      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 }
 
 void cleanup_bench_gemm(BenchGEMMProblemSpec bench_spec,
@@ -274,6 +292,11 @@ int main_bench_gemm(const int argc, const char *argv[]) {
       generate_data_and_prepare_bench_gemm_bench_gemm(argc, argv);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
-  compute_bench_gemm(bench_spec, bench_data);
+  auto start_end_events = compute_bench_gemm(bench_spec, bench_data);
+  auto start = std::get<0>(start_end_events);
+  auto stop = std::get<1>(start_end_events);
+  if (bench_spec.enable_timing) {
+    print_timing_bench_gemm(start, stop, bench_spec);
+  }
   cleanup_bench_gemm(bench_spec, bench_data);
 }
