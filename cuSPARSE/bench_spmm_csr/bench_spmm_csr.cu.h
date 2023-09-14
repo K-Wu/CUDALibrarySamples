@@ -47,12 +47,12 @@
  * Users Notice.
  */
 #pragma once
-#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
-#include <cusp/csr_matrix.h>   // cusp::csr_matrix
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
+#include <cusp/csr_matrix.h>  // cusp::csr_matrix
 #include <cusp/io/matrix_market.h>
-#include <cusparse.h>  // cusparseSpMM
-#include <stdio.h>     // printf
-#include <stdlib.h>    // EXIT_FAILURE
+#include <cusparse.h> // cusparseSpMM
+#include <stdio.h>    // printf
+#include <stdlib.h>   // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 // renamed this source file to .cpp to allow cstddef. Source:
 // https://talk.pokitto.com/t/sudden-error-cstddef-no-such-file-or-directory/711/4
@@ -66,14 +66,14 @@
 
 #include "npy.hpp"
 
-#define CHECK_CUDA(func)                                                   \
-  {                                                                        \
-    cudaError_t status = (func);                                           \
-    if (status != cudaSuccess) {                                           \
-      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
-             cudaGetErrorString(status), status);                          \
-      exit(EXIT_FAILURE);                                                  \
-    }                                                                      \
+#define CHECK_CUDA(func)                                                       \
+  {                                                                            \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__,     \
+             cudaGetErrorString(status), status);                              \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
   }
 
 #define CHECK_CUSPARSE(func)                                                   \
@@ -134,11 +134,10 @@ generate_data_and_prepare_bench_spmm_csr(const int argc, const char **argv) {
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       A_sparsity == 0.0f) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
-        "[--enable_timing] [--enable_debug_timing]\n",
-        argv[0]);
+    printf("Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+           "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+           "[--enable_timing] [--enable_debug_timing]\n",
+           argv[0]);
     exit(EXIT_FAILURE);
   }
   printf("A_num_rows: %d\n", A_num_rows);
@@ -224,9 +223,9 @@ generate_data_and_prepare_bench_spmm_csr(const int argc, const char **argv) {
   return bench_tuple;
 }
 
-std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
-    BenchSpmmCSRProblemSpec problem_spec,
-    BenchSpmmCSRRuntimeData runtime_data) {
+std::tuple<cudaEvent_t, cudaEvent_t>
+compute_bench_spmm_csr(BenchSpmmCSRProblemSpec problem_spec,
+                       BenchSpmmCSRRuntimeData runtime_data) {
   // CUSPARSE APIs
   // Create sparse matrix A in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
@@ -267,7 +266,8 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
   }
   CHECK_CUDA(cudaDeviceSynchronize());
 
-  if (problem_spec.enable_debug_timing) beg = std::chrono::system_clock::now();
+  if (problem_spec.enable_debug_timing)
+    beg = std::chrono::system_clock::now();
   CHECK_CUDA(cudaEventRecord(start));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
@@ -275,7 +275,8 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
                    runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
                    runtime_data.dBuffer))
-  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(stop));
+  if (problem_spec.enable_timing)
+    CHECK_CUDA(cudaEventRecord(stop));
   CHECK_CUDA(cudaDeviceSynchronize());
   if (problem_spec.enable_debug_timing) {
     end = std::chrono::system_clock::now();

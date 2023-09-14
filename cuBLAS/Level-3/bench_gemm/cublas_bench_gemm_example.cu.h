@@ -111,11 +111,10 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (m == 0 || n == 0 || k == 0) {
-    printf(
-        "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...] [--enable_timing] "
-        "[--enable_debug_timing]\n",
-        argv[0]);
+    printf("Usage: %s --m=## --n=## --k=## [--enable_dump] "
+           "[--result_path_and_prefix=...] [--enable_timing] "
+           "[--enable_debug_timing]\n",
+           argv[0]);
     exit(EXIT_FAILURE);
   }
   int lda = m;
@@ -186,8 +185,9 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
   return bench_gemm_tuple;
 }
 
-std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
-    BenchGEMMProblemSpec bench_spec, BenchGEMMRuntimeData bench_data) {
+std::tuple<cudaEvent_t, cudaEvent_t>
+compute_bench_gemm(BenchGEMMProblemSpec bench_spec,
+                   BenchGEMMRuntimeData bench_data) {
   /* step 3: compute */
   // We nest the cuda event timing with std::chrono to make sure the cuda event
   // is getting correct results, we will use the cuda event timing results and
