@@ -158,8 +158,6 @@ generate_data_and_prepare_bench_spmm_csr(const int argc, const char **argv) {
   float *hB;
   float *dB, *dC;
   cusparseHandle_t handle = NULL;
-  cusparseSpMatDescr_t matA;
-  cusparseDnMatDescr_t matB, matC;
   void *dBuffer = NULL;
   size_t bufferSize = 0;
 
@@ -211,9 +209,6 @@ generate_data_and_prepare_bench_spmm_csr(const int argc, const char **argv) {
       .dB = dB,
       .dC = dC,
       .handle = handle,
-      .matA = matA,
-      .matB = matB,
-      .matC = matC,
       .dBuffer = dBuffer,
       .bufferSize = bufferSize,
       .hA = hA,
@@ -268,7 +263,7 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
   CHECK_CUDA(cudaDeviceSynchronize());
 
   if (problem_spec.enable_debug_timing) beg = std::chrono::system_clock::now();
-  CHECK_CUDA(cudaEventRecord(start));
+  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(start));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
