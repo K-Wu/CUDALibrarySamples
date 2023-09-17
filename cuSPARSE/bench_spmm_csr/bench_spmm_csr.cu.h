@@ -220,8 +220,8 @@ generate_data_and_prepare_bench_spmm_csr(const int argc, const char **argv) {
 }
 
 std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
-    BenchSpmmCSRProblemSpec problem_spec,
-    BenchSpmmCSRRuntimeData runtime_data) {
+    BenchSpmmCSRProblemSpec &problem_spec,
+    BenchSpmmCSRRuntimeData &runtime_data) {
   // CUSPARSE APIs
   // Create sparse matrix A in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
@@ -283,8 +283,8 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
 }
 
 void print_timing_bench_spmm_csr(cudaEvent_t start, cudaEvent_t stop,
-                                 BenchSpmmCSRProblemSpec problem_spec,
-                                 BenchSpmmCSRRuntimeData runtime_data) {
+                                 BenchSpmmCSRProblemSpec &problem_spec,
+                                 BenchSpmmCSRRuntimeData &runtime_data) {
   float elapsed_time = 0.0f;
   CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cusparseSpMM+CSR elapsed time (ms): %f\n", elapsed_time);
@@ -295,8 +295,8 @@ void print_timing_bench_spmm_csr(cudaEvent_t start, cudaEvent_t stop,
   CHECK_CUDA(cudaEventDestroy(stop));
 }
 
-void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec problem_spec,
-                            BenchSpmmCSRRuntimeData runtime_data) {
+void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
+                            BenchSpmmCSRRuntimeData &runtime_data) {
   // Destroy matrix/vector descriptors
   CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
