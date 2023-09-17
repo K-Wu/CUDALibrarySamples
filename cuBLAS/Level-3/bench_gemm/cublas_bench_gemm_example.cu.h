@@ -80,8 +80,8 @@ struct BenchGEMMRuntimeData {
   int lda;
   int ldb;
   int ldc;
-  const data_type alpha;
-  const data_type beta;
+  data_type alpha;
+  data_type beta;
   cublasOperation_t transa;
   cublasOperation_t transb;
   std::vector<data_type> A;
@@ -96,7 +96,7 @@ struct BenchGEMMRuntimeData {
 
 std::tuple<BenchGEMMProblemSpec, BenchGEMMRuntimeData>
 generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
-                                                const char *argv[]) {
+                                                const char **argv) {
   cublasHandle_t cublasH = NULL;
   cudaStream_t stream = NULL;
   // Host problem definition
@@ -187,7 +187,7 @@ generate_data_and_prepare_bench_gemm_bench_gemm(const int argc,
 }
 
 std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
-    BenchGEMMProblemSpec bench_spec, BenchGEMMRuntimeData bench_data) {
+    BenchGEMMProblemSpec &bench_spec, BenchGEMMRuntimeData &bench_data) {
   /* step 3: compute */
   // We nest the cuda event timing with std::chrono to make sure the cuda event
   // is getting correct results, we will use the cuda event timing results and
@@ -225,17 +225,19 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
 }
 
 void print_timing_bench_gemm(cudaEvent_t start, cudaEvent_t stop,
-                             BenchGEMMProblemSpec bench_spec) {
+                             BenchGEMMProblemSpec &bench_spec) {
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cublasSgemm elapsed time (ms): %f\n", elapsed_time);
   printf("cublasSgemm throughput (GFLOPS): %f\n",
          (2.0 * bench_spec.m * bench_spec.n * bench_spec.k) /
              (elapsed_time / 1000.0) / 1e9);
+  CUDA_CHECK(cudaEventDestroy(start));
+  CUDA_CHECK(cudaEventDestroy(stop));
 }
 
-void cleanup_bench_gemm(BenchGEMMProblemSpec bench_spec,
-                        BenchGEMMRuntimeData bench_data) {
+void cleanup_bench_gemm(BenchGEMMProblemSpec &bench_spec,
+                        BenchGEMMRuntimeData &bench_data) {
   if (bench_spec.enable_dump) {
     /* step 4: copy data to host */
     CUDA_CHECK(cudaMemcpyAsync(bench_data.C.data(), bench_data.d_C,
@@ -279,15 +281,13 @@ void cleanup_bench_gemm(BenchGEMMProblemSpec bench_spec,
   CUDA_CHECK(cudaFree(bench_data.d_C));
 
   CUBLAS_CHECK(cublasDestroy(bench_data.cublasH));
-
   CUDA_CHECK(cudaStreamDestroy(bench_data.stream));
 
   CUDA_CHECK(cudaDeviceReset());
-
   return;
 }
 
-int main_bench_gemm(const int argc, const char *argv[]) {
+int main_bench_gemm(const int argc, const char **argv) {
   auto bench_tuple =
       generate_data_and_prepare_bench_gemm_bench_gemm(argc, argv);
   auto bench_spec = std::get<0>(bench_tuple);
@@ -299,4 +299,5 @@ int main_bench_gemm(const int argc, const char *argv[]) {
     print_timing_bench_gemm(start, stop, bench_spec);
   }
   cleanup_bench_gemm(bench_spec, bench_data);
+  return 0;
 }

@@ -291,6 +291,8 @@ void print_timing_bench_spmm_csr(cudaEvent_t start, cudaEvent_t stop,
   printf("cusparseSpMM+CSR throughput (GFLOPS): %f\n",
          (2.0 * runtime_data.A_nnz * problem_spec.B_num_cols) /
              (elapsed_time / 1000.0) / 1e9);
+  CHECK_CUDA(cudaEventDestroy(start));
+  CHECK_CUDA(cudaEventDestroy(stop));
 }
 
 void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec problem_spec,
@@ -357,4 +359,5 @@ int main_bench_spmm_csr(const int argc, const char **argv) {
     print_timing_bench_spmm_csr(start, stop, bench_spec, bench_data);
   }
   cleanup_bench_spmm_csr(bench_spec, bench_data);
+  return 0;
 }
