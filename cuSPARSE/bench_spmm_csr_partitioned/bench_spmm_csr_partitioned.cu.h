@@ -66,6 +66,7 @@
 #include <string>
 #include <tuple>
 
+#include "helper_cusp.cu.h"
 #include "npy.hpp"
 
 #define CHECK_CUDA(func)                                                   \
@@ -88,10 +89,13 @@
     }                                                                          \
   }
 
-struct BenchSpmmCSRProblemSpec {
+struct BenchSpmmCSRPartitionedProblemSpec {
   int A_num_rows;
   int A_num_cols;
   int B_num_cols;
+  int AA_num_rows;
+  int AA_num_cols;
+  int BB_num_cols;
   float A_sparsity;
   bool enable_dump;
   bool enable_timing;
@@ -100,8 +104,9 @@ struct BenchSpmmCSRProblemSpec {
   bool flag_specify_result_path_and_prefix;
 };
 
-struct BenchSpmmCSRRuntimeData {
+struct BenchSpmmCSRPartitionedRuntimeData {
   int A_nnz;
+  std::vector<int> AA_nnz;
   int B_num_rows;
   int ldb;
   int ldc;
@@ -112,16 +117,19 @@ struct BenchSpmmCSRRuntimeData {
   float *hB;
   float *dB, *dC;
   cusparseHandle_t handle;
-  cusparseSpMatDescr_t matA;
-  cusparseDnMatDescr_t matB, matC;
-  void *dBuffer;
-  size_t bufferSize;
+  std::vector<cusparseSpMatDescr_t> matAA;
+  std::vector<cusparseDnMatDescr_t> matBB, matCC;
+  std::vector<void *> dBuffers;
+  std::vector<size_t> bufferSizes;
+  // Keep hA in case data needs to be dumped
   cusp::csr_matrix<int, float, cusp::host_memory> hA;
-  cusp::csr_matrix<int, float, cusp::device_memory> dA;
+  std::vector<cusp::csr_matrix<int, float, cusp::host_memory>> hAA;
+  std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
 };
 
-std::tuple<BenchSpmmCSRProblemSpec, BenchSpmmCSRRuntimeData>
-generate_data_and_prepare_bench_spmm_csr(
+std::tuple<BenchSpmmCSRPartitionedProblemSpec,
+           BenchSpmmCSRPartitionedRuntimeData>
+generate_data_and_prepare_bench_spmm_csr_partitioned(
     const int argc, const char **argv,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
@@ -129,6 +137,9 @@ generate_data_and_prepare_bench_spmm_csr(
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
+  int AA_num_rows = getCmdLineArgumentInt(argc, argv, "AA_num_rows");
+  int AA_num_cols = getCmdLineArgumentInt(argc, argv, "AA_num_cols");
+  int BB_num_cols = getCmdLineArgumentInt(argc, argv, "BB_num_cols");
   float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
   bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
@@ -138,17 +149,36 @@ generate_data_and_prepare_bench_spmm_csr(
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
+      AA_num_rows == 0 || AA_num_cols == 0 || BB_num_cols == 0 ||
       A_sparsity == 0.0f) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+        "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
         "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
         "[--enable_timing] [--enable_debug_timing]\n",
         argv[0]);
     exit(EXIT_FAILURE);
   }
+  if (A_num_rows % AA_num_rows != 0 || A_num_cols % AA_num_cols != 0 ||
+      A_num_cols % BB_num_cols != 0) {
+    printf(
+        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+        "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
+        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+        "[--enable_timing] [--enable_debug_timing]\n",
+        argv[0]);
+    printf(
+        "A_num_rows must be a multiple of AA_num_rows, A_num_cols must be a "
+        "multiple of AA_num_cols, A_num_cols must be a multiple of "
+        "BB_num_cols\n");
+    exit(EXIT_FAILURE);
+  }
   printf("A_num_rows: %d\n", A_num_rows);
   printf("A_num_cols: %d\n", A_num_cols);
   printf("B_num_cols: %d\n", B_num_cols);
+  printf("AA_num_rows: %d\n", AA_num_rows);
+  printf("AA_num_cols: %d\n", AA_num_cols);
+  printf("BB_num_cols: %d\n", BB_num_cols);
   printf("A_sparsity: %f\n", A_sparsity);
 
   // ***** END OF HOST PROBLEM DEFINITION *****
@@ -163,8 +193,11 @@ generate_data_and_prepare_bench_spmm_csr(
   float *hB;
   float *dB, *dC;
   cusparseHandle_t handle = NULL;
-  void *dBuffer = NULL;
-  size_t bufferSize = 0;
+  std::vector<void *> dBuffers{};
+  std::vector<size_t> bufferSizes{};
+  std::vector<cusparseSpMatDescr_t> matAA{};
+  std::vector<cusparseDnMatDescr_t> matBB{};
+  std::vector<cusparseDnMatDescr_t> matCC{};
 
   // instantiating data
   hB = (float *)malloc(sizeof(float) * B_size);
@@ -173,7 +206,13 @@ generate_data_and_prepare_bench_spmm_csr(
       generate_random_sparse_matrix<
           cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
                                                            A_num_cols, A_nnz);
-  cusp::csr_matrix<int, float, cusp::device_memory> dA(hA);
+  auto hAA = partitionMatrix(hA, AA_num_rows, AA_num_cols);
+  std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
+  std::vector<int> AA_nnz;
+  for (auto &AA : hAA) {
+    dAA.push_back(cusp::csr_matrix<int, float, cusp::device_memory>(AA));
+    AA_nnz.push_back(AA.num_entries);
+  }
   A_nnz = hA.values.size();
   printf(
       "actual A_nnz due to deduplication during random data generation: %d\n",
@@ -193,6 +232,7 @@ generate_data_and_prepare_bench_spmm_csr(
 
   //--------------------------------------------------------------------------
   // Create Handle
+  // TODO: record utility time keyword elapsed time(util) (ms):
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(handle_creation_start));
   }
@@ -218,43 +258,76 @@ generate_data_and_prepare_bench_spmm_csr(
   }
   //--------------------------------------------------------------------------
   // CUSPARSE APIs
-
-  cusparseSpMatDescr_t matA;
-  cusparseDnMatDescr_t matB, matC;
-
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_start));
   }
-
-  // Create sparse matrix A in CSR format
-  CHECK_CUSPARSE(cusparseCreateCsr(
-      &matA, A_num_rows, A_num_cols, A_nnz,
-      // dA_csrOffsets, dA_columns, dA_values,
-      (void *)thrust::raw_pointer_cast(dA.row_offsets.data()),
-      (void *)thrust::raw_pointer_cast(dA.column_indices.data()),
-      (void *)thrust::raw_pointer_cast(dA.values.data()), CUSPARSE_INDEX_32I,
-      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F))
-  // Create dense matrix B
-  CHECK_CUSPARSE(cusparseCreateDnMat(&matB, A_num_cols, B_num_cols, ldb, dB,
-                                     CUDA_R_32F, CUSPARSE_ORDER_COL))
-  // Create dense matrix C
-  CHECK_CUSPARSE(cusparseCreateDnMat(&matC, A_num_rows, B_num_cols, ldc, dC,
-                                     CUDA_R_32F, CUSPARSE_ORDER_COL))
-  // Allocate an external buffer if needed
-  CHECK_CUSPARSE(cusparseSpMM_bufferSize(
-      handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-      CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
-      CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize))
-  CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
-
+  for (int AA_row_idx = 0; AA_row_idx < A_num_rows / AA_num_rows;
+       AA_row_idx++) {
+    for (int AA_col_idx = 0; AA_col_idx < A_num_cols / AA_num_cols;
+         AA_col_idx++) {
+      // Create sparse matrix A in CSR format
+      cusparseSpMatDescr_t curr_matAA;
+      int curr_AA_nnz;
+      CHECK_CUSPARSE(cusparseCreateCsr(
+          &curr_matAA, AA_num_rows, AA_num_cols, curr_AA_nnz,
+          // dA_csrOffsets, dA_columns, dA_values,
+          (void *)thrust::raw_pointer_cast(
+              dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  .row_offsets.data()),
+          (void *)thrust::raw_pointer_cast(
+              dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  .column_indices.data()),
+          (void *)thrust::raw_pointer_cast(
+              dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  .values.data()),
+          CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
+          CUDA_R_32F))
+      matAA.push_back(curr_matAA);
+      AA_nnz.push_back(curr_AA_nnz);
+      for (int BB_col_idx = 0; BB_col_idx < B_num_cols / BB_num_cols;
+           BB_col_idx++) {
+        if (AA_row_idx == 0) {
+          // Create dense matrix B
+          cusparseDnMatDescr_t curr_matBB;
+          CHECK_CUSPARSE(cusparseCreateDnMat(
+              &curr_matBB, AA_num_cols, BB_num_cols, ldb,
+              dB + /*row*/ (AA_col_idx * AA_num_cols) +
+                  /*col*/ (BB_col_idx * BB_num_cols) * A_num_cols,
+              CUDA_R_32F, CUSPARSE_ORDER_COL))
+          matBB.push_back(curr_matBB);
+        }
+        if (AA_col_idx == 0) {
+          // Create dense matrix C
+          cusparseDnMatDescr_t curr_matCC;
+          CHECK_CUSPARSE(
+              cusparseCreateDnMat(&curr_matCC, AA_num_rows, BB_num_cols, ldc,
+                                  dC + AA_row_idx * AA_num_rows +
+                                      BB_col_idx * BB_num_cols * A_num_rows,
+                                  CUDA_R_32F, CUSPARSE_ORDER_COL))
+          matCC.push_back(curr_matCC);
+        }
+        size_t curr_bufferSize;
+        void *curr_dBuffer;
+        // Allocate an external buffer if needed
+        CHECK_CUSPARSE(cusparseSpMM_bufferSize(
+            handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+            CUSPARSE_OPERATION_NON_TRANSPOSE, &(alpha), matAA.back(),
+            matBB.back(), &(beta), matCC.back(), CUDA_R_32F,
+            CUSPARSE_SPMM_ALG_DEFAULT, &curr_bufferSize))
+        CHECK_CUDA(cudaMalloc(&curr_dBuffer, curr_bufferSize))
+        dBuffers.push_back(curr_dBuffer);
+        bufferSizes.push_back(curr_bufferSize);
+      }
+    }
+  }
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop));
     utility_timestamps["cusparse_data_handle_and_buffer_creation"] =
         std::make_tuple(cusparse_data_handle_and_buffer_creation_start,
                         cusparse_data_handle_and_buffer_creation_stop);
   }
-  //--------------------------------------------------------------------------
-  BenchSpmmCSRProblemSpec problem_spec{
+
+  BenchSpmmCSRPartitionedProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
@@ -266,8 +339,9 @@ generate_data_and_prepare_bench_spmm_csr(
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
   };
-  BenchSpmmCSRRuntimeData runtime_data{
+  BenchSpmmCSRPartitionedRuntimeData runtime_data{
       .A_nnz = A_nnz,
+      .AA_nnz = AA_nnz,
       .B_num_rows = B_num_rows,
       .ldb = ldb,
       .ldc = ldc,
@@ -279,22 +353,23 @@ generate_data_and_prepare_bench_spmm_csr(
       .dB = dB,
       .dC = dC,
       .handle = handle,
-      .matA = matA,
-      .matB = matB,
-      .matC = matC,
-      .dBuffer = dBuffer,
-      .bufferSize = bufferSize,
+      .matAA = matAA,
+      .matBB = matBB,
+      .matCC = matCC,
+      .dBuffers = dBuffers,
+      .bufferSizes = bufferSizes,
       .hA = hA,
-      .dA = dA,
+      .hAA = hAA,
+      .dAA = dAA,
   };
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
 }
 
-std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
-    BenchSpmmCSRProblemSpec &problem_spec,
-    BenchSpmmCSRRuntimeData &runtime_data,
+std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
+    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
+    BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
   // Execute SpMM
@@ -311,12 +386,18 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
 
   if (problem_spec.enable_debug_timing) beg = std::chrono::system_clock::now();
   if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(start));
-  CHECK_CUSPARSE(
-      cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-                   CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
-                   runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-                   runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
-                   runtime_data.dBuffer))
+  for (int idx_spmm = 0;
+       idx_spmm < (problem_spec.A_num_rows / problem_spec.AA_num_rows) *
+                      (problem_spec.A_num_cols / problem_spec.AA_num_cols) *
+                      (problem_spec.B_num_cols / problem_spec.BB_num_cols);
+       idx_spmm++) {
+    CHECK_CUSPARSE(cusparseSpMM(
+        runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
+        runtime_data.matAA[idx_spmm], runtime_data.matBB[idx_spmm],
+        &(runtime_data.beta), runtime_data.matCC[idx_spmm], CUDA_R_32F,
+        CUSPARSE_SPMM_ALG_DEFAULT, runtime_data.dBuffers[idx_spmm]))
+  }
   if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(stop));
   CHECK_CUDA(cudaDeviceSynchronize());
   if (problem_spec.enable_debug_timing) {
@@ -329,9 +410,10 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
   return std::make_tuple(start, stop);
 }
 
-void print_timing_bench_spmm_csr(
-    cudaEvent_t start, cudaEvent_t stop, BenchSpmmCSRProblemSpec &problem_spec,
-    BenchSpmmCSRRuntimeData &runtime_data,
+void print_timing_bench_spmm_csr_partitioned(
+    cudaEvent_t start, cudaEvent_t stop,
+    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
+    BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
   float elapsed_time = 0.0f;
@@ -355,13 +437,51 @@ void print_timing_bench_spmm_csr(
   CHECK_CUDA(cudaEventDestroy(stop));
 }
 
-void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
-                            BenchSpmmCSRRuntimeData &runtime_data) {
-  // Destroy matrix/vector descriptors
-  CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matA))
-  CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
-  CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matC))
+void cleanup_bench_spmm_csr_partitioned(
+    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
+    BenchSpmmCSRPartitionedRuntimeData &runtime_data) {
   CHECK_CUSPARSE(cusparseDestroy(runtime_data.handle))
+
+  // Destroy matrix/vector descriptors
+  for (int AA_row_idx = 0;
+       AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
+       AA_row_idx++) {
+    for (int AA_col_idx = 0;
+         AA_col_idx < problem_spec.A_num_cols / problem_spec.AA_num_cols;
+         AA_col_idx++) {
+      // Destroy sparse matrix A in CSR format
+      CHECK_CUSPARSE(cusparseDestroySpMat(
+          (runtime_data.matAA[AA_row_idx * problem_spec.A_num_cols /
+                                  problem_spec.AA_num_cols +
+                              AA_col_idx])))
+      for (int BB_col_idx = 0;
+           BB_col_idx < problem_spec.B_num_cols / problem_spec.BB_num_cols;
+           BB_col_idx++) {
+        if (AA_row_idx == 0) {
+          // Destroy dense matrix B
+          CHECK_CUSPARSE(cusparseDestroyDnMat(
+              (runtime_data.matBB[AA_col_idx * problem_spec.B_num_cols /
+                                      problem_spec.BB_num_cols +
+                                  BB_col_idx])))
+        }
+        if (AA_col_idx == 0) {
+          // Destroy dense matrix C
+          CHECK_CUSPARSE(cusparseDestroyDnMat(
+              (runtime_data.matCC[AA_row_idx * problem_spec.B_num_cols /
+                                      problem_spec.BB_num_cols +
+                                  BB_col_idx])))
+        }
+        // Destroy the external buffer
+        CHECK_CUDA(cudaFree(
+            (runtime_data.dBuffers[(AA_row_idx * problem_spec.A_num_cols /
+                                        problem_spec.AA_num_cols +
+                                    AA_col_idx) *
+                                       problem_spec.B_num_cols /
+                                       problem_spec.BB_num_cols +
+                                   BB_col_idx])))
+      }
+    }
+  }
 
   if (problem_spec.enable_dump) {
     float *hC;
@@ -379,7 +499,8 @@ void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
       result_path_and_prefix = problem_spec.cli_result_path_and_prefix;
     } else {
       result_path_and_prefix =
-          (std::string("cusparse_bench_spmm_csr.") + time_str).c_str();
+          (std::string("cusparse_bench_spmm_csr_partitioned.") + time_str)
+              .c_str();
     }
     // Store m, n, k to a txt and store A, B, C to a numpy file
     FILE *fp =
@@ -401,28 +522,27 @@ void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
     free(hC);
   }
   // device memory deallocation
-  CHECK_CUDA(cudaFree(runtime_data.dBuffer))
   CHECK_CUDA(cudaFree(runtime_data.dB))
   CHECK_CUDA(cudaFree(runtime_data.dC))
   free(runtime_data.hB);
   return;
 }
 
-int main_bench_spmm_csr(const int argc, const char **argv) {
+int main_bench_spmm_csr_partitioned(const int argc, const char **argv) {
   std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
       utility_timestamps;
-  auto bench_tuple =
-      generate_data_and_prepare_bench_spmm_csr(argc, argv, utility_timestamps);
+  auto bench_tuple = generate_data_and_prepare_bench_spmm_csr_partitioned(
+      argc, argv, utility_timestamps);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
-  auto start_end_events =
-      compute_bench_spmm_csr(bench_spec, bench_data, utility_timestamps);
+  auto start_end_events = compute_bench_spmm_csr_partitioned(
+      bench_spec, bench_data, utility_timestamps);
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing) {
-    print_timing_bench_spmm_csr(start, stop, bench_spec, bench_data,
-                                utility_timestamps);
+    print_timing_bench_spmm_csr_partitioned(start, stop, bench_spec, bench_data,
+                                            utility_timestamps);
   }
-  cleanup_bench_spmm_csr(bench_spec, bench_data);
+  cleanup_bench_spmm_csr_partitioned(bench_spec, bench_data);
   return 0;
 }

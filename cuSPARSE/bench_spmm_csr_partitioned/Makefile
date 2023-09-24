@@ -45,19 +45,19 @@
 # comments to the code, the above Disclaimer and U.S. Government End
 # Users Notice.
 CUDA_TOOLKIT := $(shell dirname $$(command -v nvcc))/..
-INC          := -I$(CUDA_TOOLKIT)/include -I../../3rdparty/cusplibrary -I../../3rdparty/libnpy/include -I../../3rdparty
+INC          := -I$(CUDA_TOOLKIT)/include -I../../3rdparty/cusplibrary -I../../3rdparty/libnpy/include -I../../3rdparty -I../../../../cpp/include
 LIBS         := -lcudart -lcusparse
 
-all: bench_spmm_csr
+all: bench_spmm_csr_partitioned
 
-bench_spmm_csr: bench_spmm_csr.cu
-	nvcc -std=c++17 $(INC) bench_spmm_csr.cu -o bench_spmm_csr $(LIBS)
+bench_spmm_csr_partitioned: bench_spmm_csr_partitioned.cu
+	nvcc -std=c++17 $(INC) bench_spmm_csr_partitioned.cu -o bench_spmm_csr_partitioned $(LIBS)
 
 clean:
-	rm -f bench_spmm_csr
+	rm -f bench_spmm_csr_partitioned
 
 test:
 	@echo "\n==== SpMM CSR Test ====\n"
-	./bench_spmm_csr
+	./bench_spmm_csr_partitioned
 
 .PHONY: clean all test
