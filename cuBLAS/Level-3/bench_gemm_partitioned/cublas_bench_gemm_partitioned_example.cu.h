@@ -168,7 +168,14 @@ generate_data_and_prepare_bench_gemm_partitioned(
   CUDA_CHECK(cudaEventCreate(&data_copy_start));
   CUDA_CHECK(cudaEventCreate(&data_copy_stop));
 
+  // TODO: the handle creation API should be mentioned using chrono instead
+  // because the document says only computation is governed by cublasSetStream,
+  // i.e., handle creation is blocking.
   /* step 1: create cublas handle, bind a stream */
+
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
+  beg = std::chrono::system_clock::now();
+  CUDA_CHECK(cudaDeviceSynchronize());
   if (enable_timing) {
     CUDA_CHECK(cudaEventRecord(handle_creation_start, stream));
   }
@@ -180,6 +187,14 @@ generate_data_and_prepare_bench_gemm_partitioned(
     utility_timestamps["handle_creation"] =
         std::make_tuple(handle_creation_start, handle_creation_stop);
   }
+
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  end = std::chrono::system_clock::now();
+  printf(
+      "[DEBUG] cublasSgemmPartitioned handle creation chrono time "
+      "(microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 
   /* step 2: copy data to device */
   if (enable_timing) {
@@ -252,11 +267,10 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm_partitioned(
   cudaEvent_t start, stop;
   CUDA_CHECK(cudaEventCreate(&start));
   CUDA_CHECK(cudaEventCreate(&stop));
-  CUDA_CHECK(cudaDeviceSynchronize());
-  CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
-  CUDA_CHECK(cudaDeviceSynchronize());
 
   if (bench_spec.enable_debug_timing) {
+    CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
+    CUDA_CHECK(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
   if (bench_spec.enable_timing)
@@ -294,11 +308,11 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm_partitioned(
 
   if (bench_spec.enable_timing)
     CUDA_CHECK(cudaEventRecord(stop, bench_data.stream));
-  CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
-  CUDA_CHECK(cudaDeviceSynchronize());
   if (bench_spec.enable_debug_timing) {
+    CUDA_CHECK(cudaStreamSynchronize(bench_data.stream));
+    CUDA_CHECK(cudaDeviceSynchronize());
     end = std::chrono::system_clock::now();
-    printf("[DEBUG] cublas<X>gemm chrono time (microseconds): %ld\n",
+    printf("[DEBUG] cublasSgemmPartitioned chrono time (microseconds): %ld\n",
            std::chrono::duration_cast<std::chrono::microseconds>(end - beg)
                .count());
   }
@@ -312,8 +326,8 @@ void print_timing_bench_gemm_partitioned(
         &utility_timestamps) {
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
-  printf("cublasSgemm elapsed time (ms): %f\n", elapsed_time);
-  printf("cublasSgemm throughput (GFLOPS): %f\n",
+  printf("cublasSgemmPartitioned elapsed time (ms): %f\n", elapsed_time);
+  printf("cublasSgemmPartitioned throughput (GFLOPS): %f\n",
          (2.0 * bench_spec.m * bench_spec.n * bench_spec.k) /
              (elapsed_time / 1000.0) / 1e9);
   // Print elapsed time of utilities. Keyword "elapsed time(util) (ms):"
@@ -323,7 +337,8 @@ void print_timing_bench_gemm_partitioned(
     float elapsed_time_util = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&elapsed_time_util, std::get<0>(value),
                                     std::get<1>(value)));
-    printf("%s elapsed time(util) (ms): %f\n", key.c_str(), elapsed_time_util);
+    printf("cublasSgemmPartitioned %s elapsed time(util) (ms): %f\n",
+           key.c_str(), elapsed_time_util);
     CUDA_CHECK(cudaEventDestroy(std::get<0>(value)));
     CUDA_CHECK(cudaEventDestroy(std::get<1>(value)));
   }

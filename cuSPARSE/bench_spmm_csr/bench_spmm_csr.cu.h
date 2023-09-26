@@ -118,6 +118,7 @@ struct BenchSpmmCSRRuntimeData {
   size_t bufferSize;
   cusp::csr_matrix<int, float, cusp::host_memory> hA;
   cusp::csr_matrix<int, float, cusp::device_memory> dA;
+  cudaStream_t stream;
 };
 
 std::tuple<BenchSpmmCSRProblemSpec, BenchSpmmCSRRuntimeData>
@@ -165,6 +166,7 @@ generate_data_and_prepare_bench_spmm_csr(
   cusparseHandle_t handle = NULL;
   void *dBuffer = NULL;
   size_t bufferSize = 0;
+  cudaStream_t stream;
 
   // instantiating data
   hB = (float *)malloc(sizeof(float) * B_size);
@@ -191,20 +193,23 @@ generate_data_and_prepare_bench_spmm_csr(
   CHECK_CUDA(cudaEventCreate(&cusparse_data_handle_and_buffer_creation_start));
   CHECK_CUDA(cudaEventCreate(&cusparse_data_handle_and_buffer_creation_stop));
 
+  CHECK_CUDA(cudaStreamCreate(&stream));
+
   //--------------------------------------------------------------------------
   // Create Handle
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(handle_creation_start));
+    CHECK_CUDA(cudaEventRecord(handle_creation_start, stream));
   }
   CHECK_CUSPARSE(cusparseCreate(&handle))
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(handle_creation_stop));
+    CHECK_CUDA(cudaEventRecord(handle_creation_stop, stream));
     utility_timestamps["handle_creation"] =
         std::make_tuple(handle_creation_start, handle_creation_stop);
   }
+  CHECK_CUSPARSE(cusparseSetStream(handle, stream));
   // Device memory management
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(data_copy_start));
+    CHECK_CUDA(cudaEventRecord(data_copy_start, stream));
   }
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
@@ -212,18 +217,22 @@ generate_data_and_prepare_bench_spmm_csr(
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(data_copy_stop));
+    CHECK_CUDA(cudaEventRecord(data_copy_stop, stream));
     utility_timestamps["data_copy"] =
         std::make_tuple(data_copy_start, data_copy_stop);
   }
   //--------------------------------------------------------------------------
   // CUSPARSE APIs
 
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
+  beg = std::chrono::system_clock::now();
+  CHECK_CUDA(cudaDeviceSynchronize());
   cusparseSpMatDescr_t matA;
   cusparseDnMatDescr_t matB, matC;
 
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_start));
+    CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_start,
+                               stream));
   }
 
   // Create sparse matrix A in CSR format
@@ -248,11 +257,20 @@ generate_data_and_prepare_bench_spmm_csr(
   CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
 
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop));
+    CHECK_CUDA(
+        cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop, stream));
     utility_timestamps["cusparse_data_handle_and_buffer_creation"] =
         std::make_tuple(cusparse_data_handle_and_buffer_creation_start,
                         cusparse_data_handle_and_buffer_creation_stop);
   }
+
+  CHECK_CUDA(cudaDeviceSynchronize());
+
+  end = std::chrono::system_clock::now();
+  printf(
+      "[DEBUG] cusparseSpMM+CSR data handle and buffer creation chrono time "
+      "(microseconds): %ld\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
   //--------------------------------------------------------------------------
   BenchSpmmCSRProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
@@ -266,27 +284,26 @@ generate_data_and_prepare_bench_spmm_csr(
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
   };
-  BenchSpmmCSRRuntimeData runtime_data{
-      .A_nnz = A_nnz,
-      .B_num_rows = B_num_rows,
-      .ldb = ldb,
-      .ldc = ldc,
-      .B_size = B_size,
-      .C_size = C_size,
-      .alpha = alpha,
-      .beta = beta,
-      .hB = hB,
-      .dB = dB,
-      .dC = dC,
-      .handle = handle,
-      .matA = matA,
-      .matB = matB,
-      .matC = matC,
-      .dBuffer = dBuffer,
-      .bufferSize = bufferSize,
-      .hA = hA,
-      .dA = dA,
-  };
+  BenchSpmmCSRRuntimeData runtime_data{.A_nnz = A_nnz,
+                                       .B_num_rows = B_num_rows,
+                                       .ldb = ldb,
+                                       .ldc = ldc,
+                                       .B_size = B_size,
+                                       .C_size = C_size,
+                                       .alpha = alpha,
+                                       .beta = beta,
+                                       .hB = hB,
+                                       .dB = dB,
+                                       .dC = dC,
+                                       .handle = handle,
+                                       .matA = matA,
+                                       .matB = matB,
+                                       .matC = matC,
+                                       .dBuffer = dBuffer,
+                                       .bufferSize = bufferSize,
+                                       .hA = hA,
+                                       .dA = dA,
+                                       .stream = stream};
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
@@ -307,21 +324,23 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
   }
-  CHECK_CUDA(cudaDeviceSynchronize());
 
-  if (problem_spec.enable_debug_timing) beg = std::chrono::system_clock::now();
-  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(start));
+  if (problem_spec.enable_debug_timing) {
+    CHECK_CUDA(cudaDeviceSynchronize());
+    beg = std::chrono::system_clock::now();
+  }
+  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
                    runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
                    runtime_data.dBuffer))
-  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(stop));
-  CHECK_CUDA(cudaDeviceSynchronize());
+  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(stop, runtime_data.stream));
   if (problem_spec.enable_debug_timing) {
+    CHECK_CUDA(cudaDeviceSynchronize());
     end = std::chrono::system_clock::now();
-    printf("[DEBUG] cusparseSpMM chrono time (microseconds): %ld\n",
+    printf("[DEBUG] cusparseSpMM+CSR chrono time (microseconds): %ld\n",
            std::chrono::duration_cast<std::chrono::microseconds>(end - beg)
                .count());
   }
@@ -347,7 +366,8 @@ void print_timing_bench_spmm_csr(
     float elapsed_time_util = 0.0f;
     CHECK_CUDA(cudaEventElapsedTime(&elapsed_time_util, std::get<0>(value),
                                     std::get<1>(value)));
-    printf("%s elapsed time(util) (ms): %f\n", key.c_str(), elapsed_time_util);
+    printf("cusparseSpMM+CSR %s elapsed time(util) (ms): %f\n", key.c_str(),
+           elapsed_time_util);
     CHECK_CUDA(cudaEventDestroy(std::get<0>(value)));
     CHECK_CUDA(cudaEventDestroy(std::get<1>(value)));
   }
