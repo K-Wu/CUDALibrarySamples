@@ -172,6 +172,12 @@ inline bool getCmdLineArgumentValue(const int argc, const char **argv,
       if (!STRNCASECMP(string_argv, string_ref, length)) {
         if (length + 1 <= static_cast<int>(strlen(string_argv))) {
           int auto_inc = (string_argv[length] == '=') ? 1 : 0;
+          if (!auto_inc) {
+            // To avoid substring match at the beginning, e.g., --m vs --mm, we
+            // don't accept mere concatenation of argument name with value any
+            // more, e.g., --m123 vs --m=123
+            continue;
+          }
           *value = (T)atoi(&string_argv[length + auto_inc]);
         }
 
@@ -201,6 +207,12 @@ inline int getCmdLineArgumentInt(const int argc, const char **argv,
       if (!STRNCASECMP(string_argv, string_ref, length)) {
         if (length + 1 <= static_cast<int>(strlen(string_argv))) {
           int auto_inc = (string_argv[length] == '=') ? 1 : 0;
+          if (!auto_inc) {
+            // To avoid substring match at the beginning, e.g., --m vs --mm, we
+            // don't accept mere concatenation of argument name with value any
+            // more, e.g., --m123 vs --m=123
+            continue;
+          }
           value = atoi(&string_argv[length + auto_inc]);
         } else {
           value = 0;
@@ -236,6 +248,12 @@ inline float getCmdLineArgumentFloat(const int argc, const char **argv,
       if (!STRNCASECMP(string_argv, string_ref, length)) {
         if (length + 1 <= static_cast<int>(strlen(string_argv))) {
           int auto_inc = (string_argv[length] == '=') ? 1 : 0;
+          if (!auto_inc) {
+            // To avoid substring match at the beginning, e.g., --m vs --mm, we
+            // don't accept mere concatenation of argument name with value any
+            // more, e.g., --m123 vs --m=123
+            continue;
+          }
           value = static_cast<float>(atof(&string_argv[length + auto_inc]));
         } else {
           value = 0.f;

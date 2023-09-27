@@ -121,7 +121,9 @@ generate_data_and_prepare_bench_gemm_partitioned(
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
+  printf("m(%d) n(%d) k(%d) mm(%d) nn(%d) kk(%d)\n", m, n, k, mm, nn, kk);
   if (m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0) {
+    printf("m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0\n");
     printf(
         "Usage: %s --m=## --n=## --k=## --mm=## --nn=## --kk=## "
         "[--enable_dump] "
@@ -131,6 +133,7 @@ generate_data_and_prepare_bench_gemm_partitioned(
     exit(EXIT_FAILURE);
   }
   if (m % mm != 0 || n % nn != 0 || k % kk != 0) {
+    printf("m % mm != 0 || n % nn != 0 || k % kk != 0\n");
     printf(
         "Usage: %s --m=## --n=## --k=## --mm=## --nn=## --kk=## "
         "[--enable_dump] "
@@ -281,11 +284,11 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm_partitioned(
         CUBLAS_CHECK(cublasSgemm(
             bench_data.cublasH, bench_data.transa, bench_data.transb,
             bench_spec.mm, bench_spec.nn, bench_spec.kk, &(bench_data.alpha),
-            bench_data.d_A + i * bench_spec.mm * lda + l * bench_spec.kk, lda,
-            bench_data.d_B + l * bench_spec.kk * ldb + j * bench_spec.nn, ldb,
+            bench_data.d_A + i * bench_spec.mm + l * bench_spec.kk * lda, lda,
+            bench_data.d_B + l * bench_spec.kk + j * bench_spec.nn * ldb, ldb,
             &(bench_data.beta),
             bench_data.d_C + l * bench_spec.m * bench_spec.n +
-                i * bench_spec.mm * ldc + j * bench_spec.nn,
+                i * bench_spec.mm + j * bench_spec.nn * ldc,
             ldc));
       }
     }
