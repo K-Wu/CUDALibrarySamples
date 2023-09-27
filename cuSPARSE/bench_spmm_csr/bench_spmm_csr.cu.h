@@ -329,14 +329,16 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
     CHECK_CUDA(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
-  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
+  if (problem_spec.enable_timing)
+    CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
                    runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
                    runtime_data.dBuffer))
-  if (problem_spec.enable_timing) CHECK_CUDA(cudaEventRecord(stop, runtime_data.stream));
+  if (problem_spec.enable_timing)
+    CHECK_CUDA(cudaEventRecord(stop, runtime_data.stream));
   if (problem_spec.enable_debug_timing) {
     CHECK_CUDA(cudaDeviceSynchronize());
     end = std::chrono::system_clock::now();
@@ -353,6 +355,7 @@ void print_timing_bench_spmm_csr(
     BenchSpmmCSRRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
+  CHECK_CUDA(cudaEventSynchronize(stop));
   float elapsed_time = 0.0f;
   CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cusparseSpMM+CSR elapsed time (ms): %f\n", elapsed_time);

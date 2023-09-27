@@ -573,6 +573,7 @@ void print_timing_bench_spmm_csr_partitioned(
     BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
+  CHECK_CUDA(cudaEventSynchronize(stop));
   // Print elapsed time of utilities. Keyword "elapsed time(util) (ms):"
   for (const auto &keyval : utility_timestamps) {
     const auto &key = keyval.first;

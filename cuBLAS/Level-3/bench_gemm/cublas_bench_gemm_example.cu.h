@@ -269,6 +269,7 @@ void print_timing_bench_gemm(
     cudaEvent_t start, cudaEvent_t stop, BenchGEMMProblemSpec &bench_spec,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
+  CUDA_CHECK(cudaEventSynchronize(stop));
   float elapsed_time = 0.0f;
   CUDA_CHECK(cudaEventElapsedTime(&elapsed_time, start, stop));
   printf("cublasSgemm elapsed time (ms): %f\n", elapsed_time);
