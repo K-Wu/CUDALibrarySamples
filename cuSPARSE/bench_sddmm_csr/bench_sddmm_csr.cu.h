@@ -77,7 +77,7 @@
       exit(EXIT_FAILURE);                                                     \
     }                                                                          \
   }
-
+//81 - 112 was "new code" added (not moved from elsewhere or merely edited) in bench_spmm example. Should I cope them into bench_sddmm too?? Would all the variable names be the same? Lawrence 
 struct BenchSddmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
@@ -197,6 +197,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // CHECK_CUDA( cudaMemcpy(dC_values, hC_values, C_nnz * sizeof(float),
   //                        cudaMemcpyHostToDevice) )
   //--------------------------------------------------------------------------
+  //Correct declarations???? 201-220; also capitalized SDDMM? (Lawrence)
 BenchSddmmCSRProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
@@ -259,7 +260,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
       (void *)thrust::raw_pointer_cast(runtime_data.dC.values.data()),
       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
       CUDA_R_32F))
-  // did not create dense matric B or C like spmm example (Lawrence)
+  // did not create dense matrix B or C like spmm example (Lawrence)
 
 
   // allocate an external buffer if needed
@@ -267,7 +268,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
       runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
       CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
       runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-      runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
+      runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
       &(runtime_data.bufferSize)))
   CHECK_CUDA(cudaMalloc(&(runtime_data.dBuffer), runtime_data.bufferSize))
 
@@ -291,12 +292,13 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   beg = std::chrono::system_clock::now();
   CHECK_CUDA(cudaEventRecord(start));
-//double check variables (Lawrence Cheng) 
+//double check variables (Lawrence) 
   CHECK_CUSPARSE(
-      cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+//Capital SDDMM? (Lawrnece)      
+      cusparseSDDMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-                   runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
+                   runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
                    runtime_data.dBuffer))
   CHECK_CUDA(cudaEventRecord(stop));
   CHECK_CUDA(cudaDeviceSynchronize());
@@ -306,7 +308,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   printf("cusparseSDDMM+CSR elapsed time (ms): %f\n", elapsed_time);
   printf("cusparseSDDMM+CSR throughput (GFLOPS): %f\n",
-         (2.0 * A_num_rows * B_num_cols * A_num_cols) /
+         (2.0 * runtime_data.A_nnz * problem_spec.B_num_cols) /
              (elapsed_time / 1000.0) / 1e9);
   printf(
       "[DEBUG] cusparseSDDMM chrono time (microseconds): %ld\n",
@@ -317,12 +319,13 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   void cleanup(BenchSddmmCSRProblemSpec problem_spec,
              BenchSddmmSRRuntimeData runtime_data) {
   // Destroy matrix/vector descriptors
-  CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matA))
+  // in example it was "Sp; Dn; Dn" though the original code here had "Dn; Dn; Sp" for matA, matB, matC respectively. I stayed consistent with this file (sddmm) Lawrence
+  CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
-  CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matC))
+  CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matC))
   CHECK_CUSPARSE(cusparseDestroy(runtime_data.handle))
 
-  //no "Get current timestamp" section (Lawrence Cheng)
+  //no "enable_dump" if statement or "Get current timestamp" section; line 290 to 326 in bench_spmm example (Lawrence Cheng)
   //--------------------------------------------------------------------------
   // device result check
   // CHECK_CUDA( cudaMemcpy(hC_values,
@@ -354,4 +357,13 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   // CHECK_CUDA( cudaFree(dC_offsets) )
   // CHECK_CUDA( cudaFree(dC_columns) )
   // CHECK_CUDA( cudaFree(dC_values) )
+}
+
+//Necessary?
+int main_bench_sddmm_csr(const int argc, const char **argv) {
+  auto bench_tuple = generate_data_and_prepare(argc, argv);
+  auto bench_spec = std::get<0>(bench_tuple);
+  auto bench_data = std::get<1>(bench_tuple);
+  compute(bench_spec, bench_data);
+  cleanup(bench_spec, bench_data);
 }
