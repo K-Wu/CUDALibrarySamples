@@ -1,4 +1,4 @@
-/* test test by Lawrence
+/* 
  * Copyright 2020 NVIDIA Corporation.  All rights reserved.
  *
  * NOTICE TO LICENSEE:
@@ -83,11 +83,11 @@ struct BenchGEMMPartitionedProblemSpec {
 };
 
 struct BenchGEMMPartitionedRuntimeData {
-  int lda;
-  int ldb;
-  int ldc;
-  const data_type alpha;
-  const data_type beta;
+  // int lda;
+  // int ldb;
+  // int ldc;
+  data_type alpha;
+  data_type beta;
   cublasOperation_t transa;
   cublasOperation_t transb;
   std::vector<data_type> A;
