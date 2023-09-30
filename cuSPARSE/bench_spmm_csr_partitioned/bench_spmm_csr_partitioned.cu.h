@@ -67,6 +67,8 @@
 #include <tuple>
 
 #include "helper_cusp.cu.h"
+#include "helper_kernels.cu.h"
+#include "helper_utils.cu.h"
 #include "npy.hpp"
 
 #define CHECK_CUDA(func)                                                   \
@@ -126,8 +128,22 @@ struct BenchSpmmCSRPartitionedRuntimeData {
   cusp::csr_matrix<int, float, cusp::host_memory> hA;
   std::vector<cusp::csr_matrix<int, float, cusp::host_memory>> hAA;
   std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
+  // TODO: support multiple stream
+  // The recommended way is to switch stream before CUSPARSE compute APIs by
+  // cusparseSetStream() And in practice concurrent kernels won't be larger than
+  // 16 https://docs.nvidia.com/cuda/cusparse/index.html#thread-safety
   cudaStream_t stream;
 };
+
+void print_usage(const char *argv0) {
+  printf(
+      "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+      "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
+      "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+      "[--enable_timing] [--enable_debug_timing] [--test_API_on_stream]\n",
+      argv0);
+  // TODO: print the meaning of each argument
+}
 
 std::tuple<BenchSpmmCSRPartitionedProblemSpec,
            BenchSpmmCSRPartitionedRuntimeData>
@@ -154,12 +170,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       AA_num_rows == 0 || AA_num_cols == 0 || BB_num_cols == 0 ||
       A_sparsity == 0.0f) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
-        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
-        "[--enable_timing] [--enable_debug_timing] [--test_API_on_stream]\n",
-        argv[0]);
+    print_usage(argv[0]);
     // Example: ./bench_spmm_csr_partitioned --A_num_rows=1024 --A_num_cols=512
     // --B_num_cols=512 --AA_num_rows=128 --AA_num_cols=64 --BB_num_cols=64
     // --A_sparsity=0.1 --test_API_on_stream
@@ -179,12 +190,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   }
   if (A_num_rows % AA_num_rows != 0 || A_num_cols % AA_num_cols != 0 ||
       A_num_cols % BB_num_cols != 0) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
-        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
-        "[--enable_timing] [--enable_debug_timing] [--test_API_on_stream]\n",
-        argv[0]);
+    print_usage(argv[0]);
     printf(
         "A_num_rows must be a multiple of AA_num_rows, A_num_cols must be a "
         "multiple of AA_num_cols, A_num_cols must be a multiple of "
@@ -552,6 +558,7 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
       }
     }
   }
+  // TODO: need to add reduce_segements
   if (problem_spec.enable_timing)
     CHECK_CUDA(cudaEventRecord(stop, runtime_data.stream));
   if (problem_spec.enable_debug_timing) {

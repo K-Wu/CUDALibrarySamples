@@ -121,6 +121,15 @@ struct BenchSpmmCSRRuntimeData {
   cudaStream_t stream;
 };
 
+void print_usage(const char *argv0) {
+  printf(
+      "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+      "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+      "[--enable_timing] [--enable_debug_timing]\n",
+      argv0);
+  // TODO: print the meaning of each argument
+}
+
 std::tuple<BenchSpmmCSRProblemSpec, BenchSpmmCSRRuntimeData>
 generate_data_and_prepare_bench_spmm_csr(
     const int argc, const char **argv,
@@ -140,11 +149,7 @@ generate_data_and_prepare_bench_spmm_csr(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       A_sparsity == 0.0f) {
-    printf(
-        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
-        "[--enable_timing] [--enable_debug_timing]\n",
-        argv[0]);
+    print_usage(argv[0]);
     exit(EXIT_FAILURE);
   }
   printf("A_num_rows: %d\n", A_num_rows);

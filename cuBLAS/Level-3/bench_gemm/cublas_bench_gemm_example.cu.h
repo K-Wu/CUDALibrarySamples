@@ -96,6 +96,15 @@ struct BenchGEMMRuntimeData {
   cublasHandle_t cublasH;
 };
 
+void print_usage(const char *argv0) {
+  printf(
+      "Usage: %s --m=## --n=## --k=## [--enable_dump] "
+      "[--result_path_and_prefix=...] [--enable_timing] "
+      "[--enable_debug_timing]\n",
+      argv0);
+      // TODO: print the meaning of each argument
+}
+
 std::tuple<BenchGEMMProblemSpec, BenchGEMMRuntimeData>
 generate_data_and_prepare_bench_gemm(
     const int argc, const char **argv,
@@ -115,11 +124,7 @@ generate_data_and_prepare_bench_gemm(
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (m == 0 || n == 0 || k == 0) {
-    printf(
-        "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...] [--enable_timing] "
-        "[--enable_debug_timing]\n",
-        argv[0]);
+    print_usage(argv[0]);
     exit(EXIT_FAILURE);
   }
   int lda = m;
