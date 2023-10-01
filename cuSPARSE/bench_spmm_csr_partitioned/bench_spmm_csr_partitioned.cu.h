@@ -101,10 +101,13 @@ struct BenchSpmmCSRPartitionedProblemSpec {
   float A_sparsity;
   bool enable_dump;
   bool enable_timing;
+  bool enable_per_stream_timing;
   bool enable_debug_timing;
+  bool enable_graph;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
   bool test_API_on_stream;
+  int nstreams;
 };
 
 struct BenchSpmmCSRPartitionedRuntimeData {
@@ -119,7 +122,7 @@ struct BenchSpmmCSRPartitionedRuntimeData {
   float beta;
   float *hB;
   float *dB, *dC;
-  cusparseHandle_t handle;
+  std::vector<cusparseHandle_t> handles;
   std::vector<cusparseSpMatDescr_t> matAA;
   std::vector<cusparseDnMatDescr_t> matBB, matCC;
   std::vector<void *> dBuffers;
@@ -132,7 +135,7 @@ struct BenchSpmmCSRPartitionedRuntimeData {
   // The recommended way is to switch stream before CUSPARSE compute APIs by
   // cusparseSetStream() And in practice concurrent kernels won't be larger than
   // 16 https://docs.nvidia.com/cuda/cusparse/index.html#thread-safety
-  cudaStream_t stream;
+  std::vector<cudaStream_t> streams;
 };
 
 void print_usage(const char *argv0) {
@@ -140,9 +143,34 @@ void print_usage(const char *argv0) {
       "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
       "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
       "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
-      "[--enable_timing] [--enable_debug_timing] [--test_API_on_stream]\n",
+      "[--enable_timing] [--enable_per_stream_timing] [--enable_debug_timing] "
+      "[--test_API_on_stream]\n",
       argv0);
-  // TODO: print the meaning of each argument
+  // Print the meaning of each argument
+  printf(
+      "--enable_timing records the elapsed time of the computation function\n"
+      "--enable_debug_timing also records the elapsed time of the computation\n"
+      "function; but it adds device synchronization and uses chrono to record\n"
+      "the timing\n"
+      "--enable_per_stream_timing prints the elapsed time on every stream of\n"
+      "the computation function (not implemented yet)\n"
+      "When there is single stream, --enable_timing has the same meaning as\n"
+      "--enable_per_stream_timing. To reduce confusion,\n"
+      "--enable_per_stream_timing is not allowed when it is single stream\n"
+      "When there are multiple streams, --enable_timing prints the elapsed\n"
+      "time of the complete computation function:\n"
+      "It waits all events on the first stream and print the elapsed time of\n"
+      "the.\n");
+}
+
+bool report_elapsed_time_per_stream(bool enable_per_stream_timing,
+                                    bool enable_timing, int nstreams) {
+  return enable_per_stream_timing || (enable_timing && nstreams == 1);
+}
+
+bool wait_streams_on_first_and_report_that_as_elapsed_time(
+    bool enable_per_stream_timing, bool enable_timing, int nstreams) {
+  return (enable_timing && nstreams > 1);
 }
 
 std::tuple<BenchSpmmCSRPartitionedProblemSpec,
@@ -159,8 +187,13 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   int AA_num_cols = getCmdLineArgumentInt(argc, argv, "AA_num_cols");
   int BB_num_cols = getCmdLineArgumentInt(argc, argv, "BB_num_cols");
   float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
+  int nstreams = getCmdLineArgumentInt(argc, argv, "nstreams");
+  nstreams = (nstreams > 0) ? nstreams : 1;  // default value
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
+  bool enable_graph = checkCmdLineFlag(argc, argv, "enable_graph");
   bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
+  bool enable_per_stream_timing =
+      checkCmdLineFlag(argc, argv, "enable_per_stream_timing");
   bool test_API_on_stream = checkCmdLineFlag(argc, argv, "test_API_on_stream");
   bool enable_debug_timing =
       checkCmdLineFlag(argc, argv, "enable_debug_timing");
@@ -177,6 +210,13 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
     // Example: ./bench_spmm_csr_partitioned --A_num_rows=128 --A_num_cols=256
     // --B_num_cols=256 --AA_num_rows=16 --AA_num_cols=64 --BB_num_cols=64
     // --A_sparsity=0.1
+    exit(EXIT_FAILURE);
+  }
+  if (nstreams == 1 && enable_per_stream_timing) {
+    printf(
+        "please use --enable_timing instead of --enable_per_stream_timing "
+        "when there is only one stream\n");
+    print_usage(argv[0]);
     exit(EXIT_FAILURE);
   }
   if (test_API_on_stream) {
@@ -216,13 +256,13 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   float beta = 0.0f;
   float *hB;
   float *dB, *dC;
-  cusparseHandle_t handle = NULL;
+  std::vector<cusparseHandle_t> handles;
   std::vector<void *> dBuffers{};
   std::vector<size_t> bufferSizes{};
   std::vector<cusparseSpMatDescr_t> matAA{};
   std::vector<cusparseDnMatDescr_t> matBB{};
   std::vector<cusparseDnMatDescr_t> matCC{};
-  cudaStream_t stream;
+  std::vector<cudaStream_t> streams;
 
   // instantiating data
   hB = (float *)malloc(sizeof(float) * B_size);
@@ -276,28 +316,37 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
         &test_API_stream_cusparse_data_handle_and_buffer_creation_stop));
   }
 
-  CHECK_CUDA(cudaStreamCreate(&stream));
-
+  for (int idx = 0; idx < nstreams; idx++) {
+    cudaStream_t stream;
+    CHECK_CUDA(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+    streams.push_back(stream);
+  }
   //--------------------------------------------------------------------------
   // Create Handle
   std::chrono::time_point<std::chrono::system_clock> handle_creation_beg,
       handle_creation_end;
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(handle_creation_start, stream));
+    CHECK_CUDA(cudaEventRecord(handle_creation_start, streams.front()));
   }
   if (test_API_on_stream) {
     handle_creation_beg = std::chrono::system_clock::now();
 
     CHECK_CUDA(cudaEventRecord(test_API_0_handle_creation_start));
-    CHECK_CUDA(cudaEventRecord(test_API_stream_handle_creation_start, stream));
+    CHECK_CUDA(cudaEventRecord(test_API_stream_handle_creation_start,
+                               streams.front()));
 
     // CHECK_CUDA(cudaDeviceSynchronize());
   }
-  CHECK_CUSPARSE(cusparseCreate(&handle))
+  for (int idx = 0; idx < nstreams; idx++) {
+    cusparseHandle_t handle;
+    CHECK_CUSPARSE(cusparseCreate(&handle))
+    handles.push_back(handle);
+  }
   if (test_API_on_stream) {
     // CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaEventRecord(test_API_0_handle_creation_stop));
-    CHECK_CUDA(cudaEventRecord(test_API_stream_handle_creation_stop, stream));
+    CHECK_CUDA(
+        cudaEventRecord(test_API_stream_handle_creation_stop, streams.front()));
     handle_creation_end = std::chrono::system_clock::now();
     utility_timestamps["[DEBUG]API_0_handle_creation"] = std::make_tuple(
         test_API_0_handle_creation_start, test_API_0_handle_creation_stop);
@@ -312,14 +361,17 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
             .count());
   }
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(handle_creation_stop, stream));
+    CHECK_CUDA(cudaEventRecord(handle_creation_stop, streams.front()));
     utility_timestamps["handle_creation"] =
         std::make_tuple(handle_creation_start, handle_creation_stop);
   }
-  CHECK_CUSPARSE(cusparseSetStream(handle, stream));
+  for (int idx = 0; idx < nstreams; idx++) {
+    CHECK_CUSPARSE(cusparseSetStream(handles[idx], streams[idx]));
+  }
+
   // Device memory management
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(data_copy_start, stream));
+    CHECK_CUDA(cudaEventRecord(data_copy_start, streams.front()));
   }
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
@@ -327,7 +379,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
   if (enable_timing) {
-    CHECK_CUDA(cudaEventRecord(data_copy_stop, stream));
+    CHECK_CUDA(cudaEventRecord(data_copy_stop, streams.front()));
     utility_timestamps["data_copy"] =
         std::make_tuple(data_copy_start, data_copy_stop);
   }
@@ -339,7 +391,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
 
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_start,
-                               stream));
+                               streams.front()));
   }
   if (test_API_on_stream) {
     data_handle_and_buffer_creation_beg = std::chrono::system_clock::now();
@@ -348,7 +400,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
         test_API_0_cusparse_data_handle_and_buffer_creation_start));
     CHECK_CUDA(cudaEventRecord(
         test_API_stream_cusparse_data_handle_and_buffer_creation_start,
-        stream));
+        streams.front()));
     // CHECK_CUDA(cudaDeviceSynchronize());
   }
 
@@ -415,12 +467,18 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
         int idx_CC = AA_row_idx + BB_col_idx * A_num_rows / AA_num_rows;
         size_t curr_bufferSize;
         void *curr_dBuffer;
+        int idx_stream =
+            getCurrStream({BB_col_idx, AA_col_idx, AA_row_idx},
+                          {B_num_cols / BB_num_cols, A_num_cols / AA_num_cols,
+                           A_num_rows / AA_num_rows},
+                          nstreams);
         // Allocate an external buffer if needed
         CHECK_CUSPARSE(cusparseSpMM_bufferSize(
-            handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+            handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(alpha), matAA[idx_AA],
             matBB[idx_BB], &(beta), matCC[idx_CC], CUDA_R_32F,
             CUSPARSE_SPMM_ALG_DEFAULT, &curr_bufferSize))
+        // TODO: switch to memcpy async
         CHECK_CUDA(cudaMalloc(&curr_dBuffer, curr_bufferSize))
         dBuffers.push_back(curr_dBuffer);
         bufferSizes.push_back(curr_bufferSize);
@@ -432,7 +490,8 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
     CHECK_CUDA(cudaEventRecord(
         test_API_0_cusparse_data_handle_and_buffer_creation_stop));
     CHECK_CUDA(cudaEventRecord(
-        test_API_stream_cusparse_data_handle_and_buffer_creation_stop, stream));
+        test_API_stream_cusparse_data_handle_and_buffer_creation_stop,
+        streams.front()));
 
     utility_timestamps["[DEBUG]API_0_data_handle_and_buffer_creation"] =
         std::make_tuple(
@@ -453,8 +512,8 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
             .count());
   }
   if (enable_timing) {
-    CHECK_CUDA(
-        cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop, stream));
+    CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop,
+                               streams.front()));
     utility_timestamps["cusparse_data_handle_and_buffer_creation"] =
         std::make_tuple(cusparse_data_handle_and_buffer_creation_start,
                         cusparse_data_handle_and_buffer_creation_stop);
@@ -470,11 +529,14 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
       .A_sparsity = A_sparsity,
       .enable_dump = enable_dump,
       .enable_timing = enable_timing,
+      .enable_per_stream_timing = enable_per_stream_timing,
       .enable_debug_timing = enable_debug_timing,
+      .enable_graph = enable_graph,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
-      .test_API_on_stream = test_API_on_stream};
+      .test_API_on_stream = test_API_on_stream,
+      .nstreams = nstreams};
   BenchSpmmCSRPartitionedRuntimeData runtime_data{.A_nnz = A_nnz,
                                                   .AA_nnz = AA_nnz,
                                                   .B_num_rows = B_num_rows,
@@ -487,7 +549,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
                                                   .hB = hB,
                                                   .dB = dB,
                                                   .dC = dC,
-                                                  .handle = handle,
+                                                  .handles = handles,
                                                   .matAA = matAA,
                                                   .matBB = matBB,
                                                   .matCC = matCC,
@@ -496,13 +558,14 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
                                                   .hA = hA,
                                                   .hAA = hAA,
                                                   .dAA = dAA,
-                                                  .stream = stream};
+                                                  .streams = streams};
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
 }
 
-std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
+std::tuple<std::vector<cudaEvent_t>, std::vector<cudaEvent_t>>
+compute_bench_spmm_csr_partitioned(
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
@@ -512,26 +575,60 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
   // event is getting correct results, we will use the cuda event timing
   // results and ignore the std::chrono results
   std::chrono::time_point<std::chrono::system_clock> beg, end;
+  // Start and stop when wait_streams_on_first_and_report_that_as_elapsed_time
+
   cudaEvent_t start, stop;
-  if (problem_spec.enable_timing) {
+  std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
   }
 
+  // We need stop event per stream to synchronize before reduction no matter
+  // timing is enabled or not
+  for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+    cudaEvent_t stop_per_stream;
+    CHECK_CUDA(cudaEventCreate(&stop_per_stream));
+    stops_per_stream.push_back(stop_per_stream);
+  }
+
+  if (problem_spec.enable_timing) {
+    // We need stop event per stream to synchronize before reduction no matter
+    // timing is enabled or not
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      cudaEvent_t stop_per_stream;
+      CHECK_CUDA(cudaEventCreate(&stop_per_stream));
+      stops_per_stream.push_back(stop_per_stream);
+    }
+  }
+
   if (problem_spec.enable_debug_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++)
+      CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[idx]));
     CHECK_CUDA(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
-  if (problem_spec.enable_timing)
-    CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
-  // for (int idx_spmm = 0;
-  //      idx_spmm < (problem_spec.A_num_rows / problem_spec.AA_num_rows) *
-  //                     (problem_spec.A_num_cols / problem_spec.AA_num_cols)
-  //                     * (problem_spec.B_num_cols /
-  //                     problem_spec.BB_num_cols);
-  //      idx_spmm++) {
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    CHECK_CUDA(cudaEventRecord(start, runtime_data.streams.front()));
+  }
+  if (problem_spec.enable_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+              problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+              problem_spec.nstreams)) {
+        CHECK_CUDA(cudaStreamWaitEvent(runtime_data.streams[idx], start));
+      }
 
-  int idx_spmm = 0;
+      CHECK_CUDA(
+          cudaEventRecord(starts_per_stream[idx], runtime_data.streams[idx]));
+    }
+  }
+
+  // int idx_spmm = 0;
   for (int BB_col_idx = 0;
        BB_col_idx < problem_spec.B_num_cols / problem_spec.BB_num_cols;
        BB_col_idx++) {
@@ -541,6 +638,17 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
       for (int AA_row_idx = 0;
            AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
            AA_row_idx++) {
+        auto [idx_spmm, num_spmms] = get_canonical_loop_index_and_bound(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows});
+        int idx_stream =
+            getCurrStream({BB_col_idx, AA_col_idx, AA_row_idx},
+                          {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                           problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                           problem_spec.A_num_rows / problem_spec.AA_num_rows},
+                          problem_spec.nstreams);
         int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
@@ -548,20 +656,47 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
         int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
         CHECK_CUSPARSE(cusparseSpMM(
-            runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+            runtime_data.handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
             runtime_data.matAA[idx_AA], runtime_data.matBB[idx_BB],
             &(runtime_data.beta), runtime_data.matCC[idx_CC], CUDA_R_32F,
             CUSPARSE_SPMM_ALG_DEFAULT, runtime_data.dBuffers[idx_spmm]))
 
-        idx_spmm++;
+        // idx_spmm++;
       }
     }
   }
+
+  // Stream idx 0 waits for all other streams to finish before executing the
+  // reduction kernel
+  for (int idx = 1; idx < problem_spec.nstreams; idx++) {
+    CHECK_CUDA(
+        cudaEventRecord(stops_per_stream[idx], runtime_data.streams[idx]));
+    CHECK_CUDA(cudaStreamWaitEvent(runtime_data.streams.front(),
+                                   stops_per_stream[idx]));
+  }
+
   // TODO: need to add reduce_segements
+
   if (problem_spec.enable_timing)
-    CHECK_CUDA(cudaEventRecord(stop, runtime_data.stream));
+    CHECK_CUDA(cudaEventRecord(stops_per_stream.front(),
+                               runtime_data.streams.front()));
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+              problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+              problem_spec.nstreams)) {
+        CHECK_CUDA(cudaStreamWaitEvent(runtime_data.streams.front(),
+                                       stops_per_stream[idx]));
+      }
+      CHECK_CUDA(cudaEventRecord(stop, runtime_data.streams.front()));
+    }
+  }
   if (problem_spec.enable_debug_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++)
+      CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[idx]));
     CHECK_CUDA(cudaDeviceSynchronize());
     end = std::chrono::system_clock::now();
     printf(
@@ -571,16 +706,69 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr_partitioned(
             .count());
   }
 
-  return std::make_tuple(start, stop);
+  // Add start, stop pair in each stream to the return value
+  if (report_elapsed_time_per_stream(problem_spec.enable_per_stream_timing,
+                                     problem_spec.enable_timing,
+                                     problem_spec.nstreams)) {
+    return std::make_tuple(starts_per_stream, stops_per_stream);
+  }
+
+  // Synchronize on the first stream in streams vector, and add the start, stop
+  // pair to the return value
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    return std::make_tuple(std::vector<cudaEvent_t>({start}),
+                           std::vector<cudaEvent_t>({stop}));
+  }
+
+  // No timing should be reported
+  for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+    CHECK_CUDA(cudaEventDestroy(stops_per_stream[idx]));
+  }
+  return std::make_tuple(std::vector<cudaEvent_t>(),
+                         std::vector<cudaEvent_t>());
 }
 
 void print_timing_bench_spmm_csr_partitioned(
-    cudaEvent_t start, cudaEvent_t stop,
+    std::vector<cudaEvent_t> starts, std::vector<cudaEvent_t> stops,
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
-  CHECK_CUDA(cudaEventSynchronize(stop));
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    cudaEvent_t start = starts.front();
+    cudaEvent_t stop = stops.front();
+    CHECK_CUDA(cudaEventSynchronize(stop));
+    float elapsed_time = 0.0f;
+    CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
+    printf("cusparseSpMM+CSR+Partitioned elapsed time (ms): %f\n",
+           elapsed_time);
+    printf("cusparseSpMM+CSR+Partitioned throughput (GFLOPS): %f\n",
+           (2.0 * runtime_data.A_nnz * problem_spec.B_num_cols) /
+               (elapsed_time / 1000.0) / 1e9);
+    CHECK_CUDA(cudaEventDestroy(start));
+    CHECK_CUDA(cudaEventDestroy(stop));
+  }
+  if (report_elapsed_time_per_stream(problem_spec.enable_per_stream_timing,
+                                     problem_spec.enable_timing,
+                                     problem_spec.nstreams)) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      CHECK_CUDA(cudaEventSynchronize(stops[idx]));
+    }
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      float elapsed_time = 0.0f;
+      CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, starts[idx], stops[idx]));
+      printf("cusparseSpMM+CSR+Partitioned stream %d elapsed time (ms): %f\n",
+             idx, elapsed_time);
+      // TODO: enable throughput print
+      CHECK_CUDA(cudaEventDestroy(starts[idx]));
+      CHECK_CUDA(cudaEventDestroy(stops[idx]));
+    }
+  }
+
   // Print elapsed time of utilities. Keyword "elapsed time(util) (ms):"
   for (const auto &keyval : utility_timestamps) {
     const auto &key = keyval.first;
@@ -593,25 +781,11 @@ void print_timing_bench_spmm_csr_partitioned(
     CHECK_CUDA(cudaEventDestroy(std::get<0>(value)));
     CHECK_CUDA(cudaEventDestroy(std::get<1>(value)));
   }
-
-  if (problem_spec.enable_timing) {
-    float elapsed_time = 0.0f;
-    CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
-    printf("cusparseSpMM+CSR+Partitioned elapsed time (ms): %f\n",
-           elapsed_time);
-    printf("cusparseSpMM+CSR+Partitioned throughput (GFLOPS): %f\n",
-           (2.0 * runtime_data.A_nnz * problem_spec.B_num_cols) /
-               (elapsed_time / 1000.0) / 1e9);
-    CHECK_CUDA(cudaEventDestroy(start));
-    CHECK_CUDA(cudaEventDestroy(stop));
-  }
 }
 
 void cleanup_bench_spmm_csr_partitioned(
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data) {
-  CHECK_CUSPARSE(cusparseDestroy(runtime_data.handle))
-
   // Destroy matrix/vector descriptors
   int idx_spmm = 0;
   for (int BB_col_idx = 0;
@@ -687,6 +861,11 @@ void cleanup_bench_spmm_csr_partitioned(
                           2, c_shape, hC);
     free(hC);
   }
+
+  for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+    CHECK_CUSPARSE(cusparseDestroy(runtime_data.handles[idx]))
+    CHECK_CUDA(cudaStreamDestroy(runtime_data.streams[idx]))
+  }
   // device memory deallocation
   CHECK_CUDA(cudaFree(runtime_data.dB))
   CHECK_CUDA(cudaFree(runtime_data.dC))
@@ -701,8 +880,31 @@ int main_bench_spmm_csr_partitioned(const int argc, const char **argv) {
       argc, argv, utility_timestamps);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
+  std::vector<cudaGraph_t> graphs;
+  std::vector<cudaGraphExec_t> graphExecs;
+  if (bench_spec.enable_graph) {
+    for (int idx = 0; idx < bench_spec.nstreams; idx++) {
+      CHECK_CUDA(cudaStreamBeginCapture(bench_data.streams[idx],
+                                        cudaStreamCaptureModeGlobal));
+    }
+  }
   auto start_end_events = compute_bench_spmm_csr_partitioned(
       bench_spec, bench_data, utility_timestamps);
+  if (bench_spec.enable_graph) {
+    for (int idx = 0; idx < bench_spec.nstreams; idx++) {
+      cudaGraph_t graph;
+      cudaGraphExec_t graphExec = NULL;
+      CHECK_CUDA(cudaStreamEndCapture(bench_data.streams[idx], &graph));
+      cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
+      graphs.push_back(graph);
+      graphExecs.push_back(graphExec);
+    }
+
+    for (int idx = 0; idx < bench_spec.nstreams; idx++)
+      CHECK_CUDA(cudaGraphLaunch(graphExecs[idx], bench_data.streams[idx]));
+    for (int idx = 0; idx < bench_spec.nstreams; idx++)
+      CHECK_CUDA(cudaStreamSynchronize(bench_data.streams[idx]));
+  }
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing || bench_spec.test_API_on_stream) {
