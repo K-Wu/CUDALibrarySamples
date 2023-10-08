@@ -91,6 +91,7 @@
     }                                                                          \
   }
 
+namespace BenchSpMMCSRPartitioned {
 struct BenchSpmmCSRPartitionedProblemSpec {
   int A_num_rows;
   int A_num_cols;
@@ -138,7 +139,7 @@ struct BenchSpmmCSRPartitionedRuntimeData {
   std::vector<cudaStream_t> streams;
 };
 
-void print_spmm_csr_partitioned_usage() {
+void print_usage() {
   printf(
       "Usage: bench_spmm_csr_partitioned --A_num_rows=## --A_num_cols=## "
       "--B_num_cols=## "
@@ -163,19 +164,19 @@ void print_spmm_csr_partitioned_usage() {
       "the.\n");
 }
 
-bool report_elapsed_time_per_stream_spmm_csr_partitioned(
+bool report_elapsed_time_per_stream(
     bool enable_per_stream_timing, bool enable_timing, int nstreams) {
   return enable_per_stream_timing || (enable_timing && nstreams == 1);
 }
 
-bool wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+bool wait_streams_on_first_and_report_that_as_elapsed_time(
     bool enable_per_stream_timing, bool enable_timing, int nstreams) {
   return (enable_timing && nstreams > 1);
 }
 
 std::tuple<BenchSpmmCSRPartitionedProblemSpec,
            BenchSpmmCSRPartitionedRuntimeData>
-generate_data_and_prepare_bench_spmm_csr_partitioned(
+generate_data_and_prepare(
     const int argc, const char **argv,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
@@ -203,7 +204,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       AA_num_rows == 0 || AA_num_cols == 0 || BB_num_cols == 0 ||
       A_sparsity == 0.0f) {
-    print_spmm_csr_partitioned_usage();
+    print_usage();
     // Example: ./bench_spmm_csr_partitioned --A_num_rows=1024 --A_num_cols=512
     // --B_num_cols=512 --AA_num_rows=128 --AA_num_cols=64 --BB_num_cols=64
     // --A_sparsity=0.1 --test_API_on_stream
@@ -216,7 +217,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
     printf(
         "please use --enable_timing instead of --enable_per_stream_timing "
         "when there is only one stream\n");
-    print_spmm_csr_partitioned_usage();
+    print_usage();
     exit(EXIT_FAILURE);
   }
   if (test_API_on_stream) {
@@ -230,7 +231,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
   }
   if (A_num_rows % AA_num_rows != 0 || A_num_cols % AA_num_cols != 0 ||
       A_num_cols % BB_num_cols != 0) {
-    print_spmm_csr_partitioned_usage();
+    print_usage();
     printf(
         "A_num_rows must be a multiple of AA_num_rows, A_num_cols must be a "
         "multiple of AA_num_cols, A_num_cols must be a multiple of "
@@ -565,7 +566,7 @@ generate_data_and_prepare_bench_spmm_csr_partitioned(
 }
 
 std::tuple<std::vector<cudaEvent_t>, std::vector<cudaEvent_t>>
-compute_bench_spmm_csr_partitioned(
+compute(
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
@@ -576,11 +577,11 @@ compute_bench_spmm_csr_partitioned(
   // results and ignore the std::chrono results
   std::chrono::time_point<std::chrono::system_clock> beg, end;
   // Start and stop when
-  // wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned
+  // wait_streams_on_first_and_report_that_as_elapsed_time
 
   cudaEvent_t start, stop;
   std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     CHECK_CUDA(cudaEventCreate(&start));
@@ -611,14 +612,14 @@ compute_bench_spmm_csr_partitioned(
     CHECK_CUDA(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     CHECK_CUDA(cudaEventRecord(start, runtime_data.streams.front()));
   }
   if (problem_spec.enable_timing) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
               problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
               problem_spec.nstreams)) {
         CHECK_CUDA(cudaStreamWaitEvent(runtime_data.streams[idx], start));
@@ -682,11 +683,11 @@ compute_bench_spmm_csr_partitioned(
   if (problem_spec.enable_timing)
     CHECK_CUDA(cudaEventRecord(stops_per_stream.front(),
                                runtime_data.streams.front()));
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
               problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
               problem_spec.nstreams)) {
         CHECK_CUDA(cudaStreamWaitEvent(runtime_data.streams.front(),
@@ -708,7 +709,7 @@ compute_bench_spmm_csr_partitioned(
   }
 
   // Add start, stop pair in each stream to the return value
-  if (report_elapsed_time_per_stream_spmm_csr_partitioned(
+  if (report_elapsed_time_per_stream(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     return std::make_tuple(starts_per_stream, stops_per_stream);
@@ -716,7 +717,7 @@ compute_bench_spmm_csr_partitioned(
 
   // Synchronize on the first stream in streams vector, and add the start, stop
   // pair to the return value
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     return std::make_tuple(std::vector<cudaEvent_t>({start}),
@@ -731,13 +732,13 @@ compute_bench_spmm_csr_partitioned(
                          std::vector<cudaEvent_t>());
 }
 
-void print_timing_bench_spmm_csr_partitioned(
+void print_timing(
     std::vector<cudaEvent_t> starts, std::vector<cudaEvent_t> stops,
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_spmm_csr_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     cudaEvent_t start = starts.front();
@@ -753,7 +754,7 @@ void print_timing_bench_spmm_csr_partitioned(
     CHECK_CUDA(cudaEventDestroy(start));
     CHECK_CUDA(cudaEventDestroy(stop));
   }
-  if (report_elapsed_time_per_stream_spmm_csr_partitioned(
+  if (report_elapsed_time_per_stream(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
@@ -784,7 +785,7 @@ void print_timing_bench_spmm_csr_partitioned(
   }
 }
 
-void cleanup_bench_spmm_csr_partitioned(
+void cleanup(
     BenchSpmmCSRPartitionedProblemSpec &problem_spec,
     BenchSpmmCSRPartitionedRuntimeData &runtime_data) {
   // Destroy matrix/vector descriptors
@@ -874,10 +875,14 @@ void cleanup_bench_spmm_csr_partitioned(
   return;
 }
 
-int main_bench_spmm_csr_partitioned(const int argc, const char **argv) {
+// TODO: When cuda graph is enabled, the original compute stage is now creating
+// the graph, and we need a new stage that launches the graph. The rest should
+// be kept the same
+
+int main(const int argc, const char **argv) {
   std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
       utility_timestamps;
-  auto bench_tuple = generate_data_and_prepare_bench_spmm_csr_partitioned(
+  auto bench_tuple = generate_data_and_prepare(
       argc, argv, utility_timestamps);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
@@ -887,7 +892,7 @@ int main_bench_spmm_csr_partitioned(const int argc, const char **argv) {
     CHECK_CUDA(cudaStreamBeginCapture(bench_data.streams[0],
                                       cudaStreamCaptureModeGlobal));
   }
-  auto start_end_events = compute_bench_spmm_csr_partitioned(
+  auto start_end_events = compute(
       bench_spec, bench_data, utility_timestamps);
 
   // Only stream idx 0 needs to be captured because other stream waits on the
@@ -908,9 +913,10 @@ int main_bench_spmm_csr_partitioned(const int argc, const char **argv) {
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing || bench_spec.test_API_on_stream) {
-    print_timing_bench_spmm_csr_partitioned(start, stop, bench_spec, bench_data,
+    print_timing(start, stop, bench_spec, bench_data,
                                             utility_timestamps);
   }
-  cleanup_bench_spmm_csr_partitioned(bench_spec, bench_data);
+  cleanup(bench_spec, bench_data);
   return 0;
 }
+};  // namespace BenchSpMMCSRPartitioned

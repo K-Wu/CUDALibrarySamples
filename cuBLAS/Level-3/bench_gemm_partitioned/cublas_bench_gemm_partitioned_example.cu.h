@@ -69,6 +69,7 @@
 
 using data_type = float;
 
+namespace BenchGEMMPartitioned {
 struct BenchGEMMPartitionedProblemSpec {
   int m;
   int n;
@@ -106,7 +107,7 @@ struct BenchGEMMPartitionedRuntimeData {
   std::vector<cublasHandle_t> cublasHs;
 };
 
-void print_gemm_partitioned_usage() {
+void print_usage() {
   printf(
       "Usage: cublas_bench_gemm_partitioned_example --m=## --n=## --k=## "
       "--mm=## --nn=## --kk=## "
@@ -130,18 +131,18 @@ void print_gemm_partitioned_usage() {
       "the.\n");
 }
 
-bool report_elapsed_time_per_stream_gemm_partitioned(bool enable_per_stream_timing,
-                                    bool enable_timing, int nstreams) {
+bool report_elapsed_time_per_stream(
+    bool enable_per_stream_timing, bool enable_timing, int nstreams) {
   return enable_per_stream_timing || (enable_timing && nstreams == 1);
 }
 
-bool wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+bool wait_streams_on_first_and_report_that_as_elapsed_time(
     bool enable_per_stream_timing, bool enable_timing, int nstreams) {
   return (enable_timing && nstreams > 1);
 }
 
 std::tuple<BenchGEMMPartitionedProblemSpec, BenchGEMMPartitionedRuntimeData>
-generate_data_and_prepare_bench_gemm_partitioned(
+generate_data_and_prepare(
     const int argc, const char **argv,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
@@ -170,13 +171,13 @@ generate_data_and_prepare_bench_gemm_partitioned(
          nn, kk, nstreams);
   if (m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0) {
     printf("m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0\n");
-    print_gemm_partitioned_usage();
+    print_usage();
 
     exit(EXIT_FAILURE);
   }
   if (m % mm != 0 || n % nn != 0 || k % kk != 0) {
     printf("m % mm != 0 || n % nn != 0 || k % kk != 0\n");
-    print_gemm_partitioned_usage();
+    print_usage();
     printf("m, n, k must be divisible by mm, nn, kk, respectively\n");
     exit(EXIT_FAILURE);
   }
@@ -184,7 +185,7 @@ generate_data_and_prepare_bench_gemm_partitioned(
     printf(
         "please use --enable_timing instead of --enable_per_stream_timing "
         "when there is only one stream\n");
-    print_gemm_partitioned_usage();
+    print_usage();
     exit(EXIT_FAILURE);
   }
   const data_type alpha = 1.0;
@@ -314,7 +315,7 @@ generate_data_and_prepare_bench_gemm_partitioned(
 }
 
 std::tuple<std::vector<cudaEvent_t>, std::vector<cudaEvent_t>>
-compute_bench_gemm_partitioned(
+compute(
     BenchGEMMPartitionedProblemSpec &bench_spec,
     BenchGEMMPartitionedRuntimeData &bench_data,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
@@ -331,7 +332,7 @@ compute_bench_gemm_partitioned(
   std::chrono::time_point<std::chrono::system_clock> beg, end;
   cudaEvent_t start, stop;
   std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     CUDA_CHECK(cudaEventCreate(&start));
@@ -360,14 +361,14 @@ compute_bench_gemm_partitioned(
     beg = std::chrono::system_clock::now();
   }
 
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     CUDA_CHECK(cudaEventRecord(start, bench_data.streams.front()));
   }
   if (bench_spec.enable_timing) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
               bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
               bench_spec.nstreams)) {
         CUDA_CHECK(cudaStreamWaitEvent(bench_data.streams[idx], start));
@@ -427,11 +428,11 @@ compute_bench_gemm_partitioned(
     CUDA_CHECK(cudaEventRecord(stops_per_stream[0], bench_data.streams[0]));
   }
 
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
               bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
               bench_spec.nstreams)) {
         CUDA_CHECK(cudaStreamWaitEvent(bench_data.streams.front(),
@@ -452,15 +453,15 @@ compute_bench_gemm_partitioned(
   }
 
   // Add start, stop pair in each stream to the return value
-  if (report_elapsed_time_per_stream_gemm_partitioned(bench_spec.enable_per_stream_timing,
-                                     bench_spec.enable_timing,
-                                     bench_spec.nstreams)) {
+  if (report_elapsed_time_per_stream(
+          bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
+          bench_spec.nstreams)) {
     return std::make_tuple(starts_per_stream, stops_per_stream);
   }
 
   // Synchronize on the first stream in streams vector, and add the start, stop
   // pair to the return value
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     return std::make_tuple(std::vector<cudaEvent_t>({start}),
@@ -475,12 +476,12 @@ compute_bench_gemm_partitioned(
                          std::vector<cudaEvent_t>());
 }
 
-void print_timing_bench_gemm_partitioned(
+void print_timing(
     std::vector<cudaEvent_t> starts, std::vector<cudaEvent_t> stops,
     BenchGEMMPartitionedProblemSpec &bench_spec,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
-  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     cudaEvent_t start = starts.front();
@@ -495,9 +496,9 @@ void print_timing_bench_gemm_partitioned(
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
   }
-  if (report_elapsed_time_per_stream_gemm_partitioned(bench_spec.enable_per_stream_timing,
-                                     bench_spec.enable_timing,
-                                     bench_spec.nstreams)) {
+  if (report_elapsed_time_per_stream(
+          bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
+          bench_spec.nstreams)) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
       CUDA_CHECK(cudaEventSynchronize(stops[idx]));
     }
@@ -530,7 +531,7 @@ void print_timing_bench_gemm_partitioned(
   }
 }
 
-void cleanup_bench_gemm_partitioned(
+void cleanup(
     BenchGEMMPartitionedProblemSpec &bench_spec,
     BenchGEMMPartitionedRuntimeData &bench_data) {
   int lda = bench_spec.m;
@@ -587,10 +588,10 @@ void cleanup_bench_gemm_partitioned(
   return;
 }
 
-int main_bench_gemm_partitioned(const int argc, const char **argv) {
+int main(const int argc, const char **argv) {
   std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
       utility_timestamps;
-  auto bench_tuple = generate_data_and_prepare_bench_gemm_partitioned(
+  auto bench_tuple = generate_data_and_prepare(
       argc, argv, utility_timestamps);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
@@ -601,7 +602,7 @@ int main_bench_gemm_partitioned(const int argc, const char **argv) {
     CUDA_CHECK(cudaStreamBeginCapture(bench_data.streams[0],
                                       cudaStreamCaptureModeGlobal));
   }
-  auto start_end_events = compute_bench_gemm_partitioned(bench_spec, bench_data,
+  auto start_end_events = compute(bench_spec, bench_data,
                                                          utility_timestamps);
 
   // Only stream idx 0 needs to be captured because other stream waits on
@@ -623,9 +624,10 @@ int main_bench_gemm_partitioned(const int argc, const char **argv) {
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing) {
-    print_timing_bench_gemm_partitioned(start, stop, bench_spec,
+    print_timing(start, stop, bench_spec,
                                         utility_timestamps);
   }
-  cleanup_bench_gemm_partitioned(bench_spec, bench_data);
+  cleanup(bench_spec, bench_data);
   return 0;
 }
+};  // namespace BenchGEMMPartitioned
