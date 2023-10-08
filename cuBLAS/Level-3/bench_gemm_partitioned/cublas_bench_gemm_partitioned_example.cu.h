@@ -64,7 +64,7 @@
 
 #include "cublas_utils.h"
 #include "helper_kernels.cu.h"
-#include "helper_utils.cu.h"
+#include "helper_loops.cu.h"
 #include "npy.hpp"
 
 using data_type = float;
@@ -106,13 +106,13 @@ struct BenchGEMMPartitionedRuntimeData {
   std::vector<cublasHandle_t> cublasHs;
 };
 
-void print_usage(const char *argv0) {
+void print_gemm_partitioned_usage() {
   printf(
-      "Usage: %s --m=## --n=## --k=## --mm=## --nn=## --kk=## "
+      "Usage: cublas_bench_gemm_partitioned_example --m=## --n=## --k=## "
+      "--mm=## --nn=## --kk=## "
       "[--nstreams=##] [--enable_graph] [--enable_dump] "
       "[--result_path_and_prefix=...] [--enable_timing] "
-      "[--enable_debug_timing]\n",
-      argv0);
+      "[--enable_debug_timing]\n");
   // Print the meaning of each argument
   printf(
       "--enable_timing records the elapsed time of the computation function\n"
@@ -128,15 +128,14 @@ void print_usage(const char *argv0) {
       "time of the complete computation function:\n"
       "It waits all events on the first stream and print the elapsed time of\n"
       "the.\n");
-  // TODO: add enable_total_timing
 }
 
-bool report_elapsed_time_per_stream(bool enable_per_stream_timing,
+bool report_elapsed_time_per_stream_gemm_partitioned(bool enable_per_stream_timing,
                                     bool enable_timing, int nstreams) {
   return enable_per_stream_timing || (enable_timing && nstreams == 1);
 }
 
-bool wait_streams_on_first_and_report_that_as_elapsed_time(
+bool wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
     bool enable_per_stream_timing, bool enable_timing, int nstreams) {
   return (enable_timing && nstreams > 1);
 }
@@ -171,13 +170,13 @@ generate_data_and_prepare_bench_gemm_partitioned(
          nn, kk, nstreams);
   if (m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0) {
     printf("m == 0 || n == 0 || k == 0 || mm == 0 || nn == 0 || kk == 0\n");
-    print_usage(argv[0]);
+    print_gemm_partitioned_usage();
 
     exit(EXIT_FAILURE);
   }
   if (m % mm != 0 || n % nn != 0 || k % kk != 0) {
     printf("m % mm != 0 || n % nn != 0 || k % kk != 0\n");
-    print_usage(argv[0]);
+    print_gemm_partitioned_usage();
     printf("m, n, k must be divisible by mm, nn, kk, respectively\n");
     exit(EXIT_FAILURE);
   }
@@ -185,7 +184,7 @@ generate_data_and_prepare_bench_gemm_partitioned(
     printf(
         "please use --enable_timing instead of --enable_per_stream_timing "
         "when there is only one stream\n");
-    print_usage(argv[0]);
+    print_gemm_partitioned_usage();
     exit(EXIT_FAILURE);
   }
   const data_type alpha = 1.0;
@@ -332,7 +331,7 @@ compute_bench_gemm_partitioned(
   std::chrono::time_point<std::chrono::system_clock> beg, end;
   cudaEvent_t start, stop;
   std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
-  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     CUDA_CHECK(cudaEventCreate(&start));
@@ -361,14 +360,14 @@ compute_bench_gemm_partitioned(
     beg = std::chrono::system_clock::now();
   }
 
-  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     CUDA_CHECK(cudaEventRecord(start, bench_data.streams.front()));
   }
   if (bench_spec.enable_timing) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
               bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
               bench_spec.nstreams)) {
         CUDA_CHECK(cudaStreamWaitEvent(bench_data.streams[idx], start));
@@ -428,11 +427,11 @@ compute_bench_gemm_partitioned(
     CUDA_CHECK(cudaEventRecord(stops_per_stream[0], bench_data.streams[0]));
   }
 
-  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+      if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
               bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
               bench_spec.nstreams)) {
         CUDA_CHECK(cudaStreamWaitEvent(bench_data.streams.front(),
@@ -453,7 +452,7 @@ compute_bench_gemm_partitioned(
   }
 
   // Add start, stop pair in each stream to the return value
-  if (report_elapsed_time_per_stream(bench_spec.enable_per_stream_timing,
+  if (report_elapsed_time_per_stream_gemm_partitioned(bench_spec.enable_per_stream_timing,
                                      bench_spec.enable_timing,
                                      bench_spec.nstreams)) {
     return std::make_tuple(starts_per_stream, stops_per_stream);
@@ -461,7 +460,7 @@ compute_bench_gemm_partitioned(
 
   // Synchronize on the first stream in streams vector, and add the start, stop
   // pair to the return value
-  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     return std::make_tuple(std::vector<cudaEvent_t>({start}),
@@ -481,7 +480,7 @@ void print_timing_bench_gemm_partitioned(
     BenchGEMMPartitionedProblemSpec &bench_spec,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
-  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+  if (wait_streams_on_first_and_report_that_as_elapsed_time_gemm_partitioned(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
     cudaEvent_t start = starts.front();
@@ -496,7 +495,7 @@ void print_timing_bench_gemm_partitioned(
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
   }
-  if (report_elapsed_time_per_stream(bench_spec.enable_per_stream_timing,
+  if (report_elapsed_time_per_stream_gemm_partitioned(bench_spec.enable_per_stream_timing,
                                      bench_spec.enable_timing,
                                      bench_spec.nstreams)) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
@@ -599,27 +598,27 @@ int main_bench_gemm_partitioned(const int argc, const char **argv) {
   std::vector<cudaGraph_t> graphs;
   std::vector<cudaGraphExec_t> graphExecs;
   if (bench_spec.enable_graph) {
-    for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      CUDA_CHECK(cudaStreamBeginCapture(bench_data.streams[idx],
-                                        cudaStreamCaptureModeGlobal));
-    }
+    CUDA_CHECK(cudaStreamBeginCapture(bench_data.streams[0],
+                                      cudaStreamCaptureModeGlobal));
   }
   auto start_end_events = compute_bench_gemm_partitioned(bench_spec, bench_data,
                                                          utility_timestamps);
-  if (bench_spec.enable_graph) {
-    for (int idx = 0; idx < bench_spec.nstreams; idx++) {
-      cudaGraph_t graph;
-      cudaGraphExec_t graphExec = NULL;
-      CUDA_CHECK(cudaStreamEndCapture(bench_data.streams[idx], &graph));
-      cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
-      graphs.push_back(graph);
-      graphExecs.push_back(graphExec);
-    }
 
-    for (int idx = 0; idx < bench_spec.nstreams; idx++)
-      CUDA_CHECK(cudaGraphLaunch(graphExecs[idx], bench_data.streams[idx]));
-    for (int idx = 0; idx < bench_spec.nstreams; idx++)
-      CUDA_CHECK(cudaStreamSynchronize(bench_data.streams[idx]));
+  // Only stream idx 0 needs to be captured because other stream waits on
+  // the start event of stream idx 0, and stream idx 0 waits on the stop event
+  // of other streams
+  // Reference:
+  // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cross-stream-dependencies-and-events
+  if (bench_spec.enable_graph) {
+    cudaGraph_t graph;
+    cudaGraphExec_t graphExec = NULL;
+    CUDA_CHECK(cudaStreamEndCapture(bench_data.streams[0], &graph));
+    cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
+    graphs.push_back(graph);
+    graphExecs.push_back(graphExec);
+
+    CUDA_CHECK(cudaGraphLaunch(graphExecs[0], bench_data.streams[0]));
+    CUDA_CHECK(cudaStreamSynchronize(bench_data.streams[0]));
   }
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
