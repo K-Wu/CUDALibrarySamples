@@ -892,10 +892,9 @@ void cleanup(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
 // When cuda graph is enabled, the original compute stage is now creating
 // the graph, and we need a new stage that launches the graph. The rest should
 // be kept the same.
-void establish_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
-                     TimingResults &timing_results) {
+void create_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+                  TimingResults &timing_results) {
   std::vector<cudaGraph_t> graphs;
-  std::vector<cudaGraphExec_t> graphExecs;
   CHECK_CUDA(cudaStreamBeginCapture(runtime_data.streams[0],
                                     cudaStreamCaptureModeGlobal));
 
@@ -906,19 +905,25 @@ void establish_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   // other streams Reference:
   // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cross-stream-dependencies-and-events
   cudaGraph_t graph;
-  cudaGraphExec_t graphExec = NULL;
   CHECK_CUDA(cudaStreamEndCapture(runtime_data.streams[0], &graph));
-  cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
   graphs.push_back(graph);
-  graphExecs.push_back(graphExec);
-
   runtime_data.graphs = graphs;
+
+  return;
+}
+
+void initiate_graph(RuntimeData &runtime_data) {
+  std::vector<cudaGraphExec_t> graphExecs;
+  cudaGraphExec_t graphExec = NULL;
+  CHECK_CUDA(
+      cudaGraphInstantiate(&graphExec, runtime_data.graphs[0], NULL, NULL, 0));
+  graphExecs.push_back(graphExec);
   runtime_data.graphExecs = graphExecs;
 
   return;
 }
 
-void launch_graph(RuntimeData &runtime_data) {
+void launch_graph_and_wait(RuntimeData &runtime_data) {
   CHECK_CUDA(
       cudaGraphLaunch(runtime_data.graphExecs[0], runtime_data.streams[0]));
   CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[0]));
@@ -931,13 +936,18 @@ int main(const int argc, const char **argv) {
   auto bench_data = std::get<1>(bench_tuple);
 
   if (bench_spec.enable_graph) {
-    establish_graph(bench_spec, bench_data, timing_results);
-    launch_graph(bench_data);
+    create_graph(bench_spec, bench_data, timing_results);
+    initiate_graph(bench_data);
+    launch_graph_and_wait(bench_data);
   } else {
     compute(bench_spec, bench_data, timing_results);
   }
   if (bench_spec.enable_timing || bench_spec.test_API_on_stream) {
     print_timing(bench_spec, bench_data, timing_results);
+  }
+  if (bench_spec.enable_graph) {
+    CHECK_CUDA(cudaGraphExecDestroy(bench_data.graphExecs[0]));
+    CHECK_CUDA(cudaGraphDestroy(bench_data.graphs[0]));
   }
   cleanup(bench_spec, bench_data);
   return 0;
