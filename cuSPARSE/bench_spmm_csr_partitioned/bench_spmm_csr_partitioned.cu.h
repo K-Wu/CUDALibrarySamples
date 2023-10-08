@@ -92,7 +92,14 @@
   }
 
 namespace BenchSpMMCSRPartitioned {
-struct BenchSpmmCSRPartitionedProblemSpec {
+struct TimingResults {
+  std::vector<cudaEvent_t> start_events;
+  std::vector<cudaEvent_t> stop_events;
+  std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
+      utility_timestamps;
+};
+
+struct ProblemSpec {
   int A_num_rows;
   int A_num_cols;
   int B_num_cols;
@@ -111,7 +118,7 @@ struct BenchSpmmCSRPartitionedProblemSpec {
   int nstreams;
 };
 
-struct BenchSpmmCSRPartitionedRuntimeData {
+struct RuntimeData {
   int A_nnz;
   std::vector<int> AA_nnz;
   int B_num_rows;
@@ -137,6 +144,8 @@ struct BenchSpmmCSRPartitionedRuntimeData {
   // cusparseSetStream() And in practice concurrent kernels won't be larger than
   // 16 https://docs.nvidia.com/cuda/cusparse/index.html#thread-safety
   std::vector<cudaStream_t> streams;
+  std::vector<cudaGraph_t> graphs;
+  std::vector<cudaGraphExec_t> graphExecs;
 };
 
 void print_usage() {
@@ -164,8 +173,8 @@ void print_usage() {
       "the.\n");
 }
 
-bool report_elapsed_time_per_stream(
-    bool enable_per_stream_timing, bool enable_timing, int nstreams) {
+bool report_elapsed_time_per_stream(bool enable_per_stream_timing,
+                                    bool enable_timing, int nstreams) {
   return enable_per_stream_timing || (enable_timing && nstreams == 1);
 }
 
@@ -174,12 +183,8 @@ bool wait_streams_on_first_and_report_that_as_elapsed_time(
   return (enable_timing && nstreams > 1);
 }
 
-std::tuple<BenchSpmmCSRPartitionedProblemSpec,
-           BenchSpmmCSRPartitionedRuntimeData>
-generate_data_and_prepare(
-    const int argc, const char **argv,
-    std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
-        &utility_timestamps) {
+std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
+    const int argc, const char **argv, TimingResults &timing_results) {
   // Host problem definition
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
@@ -349,9 +354,10 @@ generate_data_and_prepare(
     CHECK_CUDA(
         cudaEventRecord(test_API_stream_handle_creation_stop, streams.front()));
     handle_creation_end = std::chrono::system_clock::now();
-    utility_timestamps["[DEBUG]API_0_handle_creation"] = std::make_tuple(
-        test_API_0_handle_creation_start, test_API_0_handle_creation_stop);
-    utility_timestamps["[DEBUG]API_stream_handle_creation"] =
+    timing_results.utility_timestamps["[DEBUG]API_0_handle_creation"] =
+        std::make_tuple(test_API_0_handle_creation_start,
+                        test_API_0_handle_creation_stop);
+    timing_results.utility_timestamps["[DEBUG]API_stream_handle_creation"] =
         std::make_tuple(test_API_stream_handle_creation_start,
                         test_API_stream_handle_creation_stop);
     printf(
@@ -363,7 +369,7 @@ generate_data_and_prepare(
   }
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(handle_creation_stop, streams.front()));
-    utility_timestamps["handle_creation"] =
+    timing_results.utility_timestamps["handle_creation"] =
         std::make_tuple(handle_creation_start, handle_creation_stop);
   }
   for (int idx = 0; idx < nstreams; idx++) {
@@ -381,7 +387,7 @@ generate_data_and_prepare(
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(data_copy_stop, streams.front()));
-    utility_timestamps["data_copy"] =
+    timing_results.utility_timestamps["data_copy"] =
         std::make_tuple(data_copy_start, data_copy_stop);
   }
   //--------------------------------------------------------------------------
@@ -494,14 +500,15 @@ generate_data_and_prepare(
         test_API_stream_cusparse_data_handle_and_buffer_creation_stop,
         streams.front()));
 
-    utility_timestamps["[DEBUG]API_0_data_handle_and_buffer_creation"] =
+    timing_results
+        .utility_timestamps["[DEBUG]API_0_data_handle_and_buffer_creation"] =
         std::make_tuple(
             test_API_0_cusparse_data_handle_and_buffer_creation_start,
             test_API_0_cusparse_data_handle_and_buffer_creation_stop);
-    utility_timestamps["[DEBUG]API_stream_data_handle_and_buffer_creation"] =
-        std::make_tuple(
-            test_API_stream_cusparse_data_handle_and_buffer_creation_start,
-            test_API_stream_cusparse_data_handle_and_buffer_creation_stop);
+    timing_results.utility_timestamps
+        ["[DEBUG]API_stream_data_handle_and_buffer_creation"] = std::make_tuple(
+        test_API_stream_cusparse_data_handle_and_buffer_creation_start,
+        test_API_stream_cusparse_data_handle_and_buffer_creation_stop);
     data_handle_and_buffer_creation_end = std::chrono::system_clock::now();
     printf(
         "[DEBUG] cusparseSpMM+CSR data handle and buffer creation chrono "
@@ -515,12 +522,13 @@ generate_data_and_prepare(
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_stop,
                                streams.front()));
-    utility_timestamps["cusparse_data_handle_and_buffer_creation"] =
+    timing_results
+        .utility_timestamps["cusparse_data_handle_and_buffer_creation"] =
         std::make_tuple(cusparse_data_handle_and_buffer_creation_start,
                         cusparse_data_handle_and_buffer_creation_stop);
   }
 
-  BenchSpmmCSRPartitionedProblemSpec problem_spec{
+  ProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
@@ -538,39 +546,45 @@ generate_data_and_prepare(
           flag_specify_result_path_and_prefix,
       .test_API_on_stream = test_API_on_stream,
       .nstreams = nstreams};
-  BenchSpmmCSRPartitionedRuntimeData runtime_data{.A_nnz = A_nnz,
-                                                  .AA_nnz = AA_nnz,
-                                                  .B_num_rows = B_num_rows,
-                                                  .ldb = ldb,
-                                                  .ldc = ldc,
-                                                  .B_size = B_size,
-                                                  .C_size = C_size,
-                                                  .alpha = alpha,
-                                                  .beta = beta,
-                                                  .hB = hB,
-                                                  .dB = dB,
-                                                  .dC = dC,
-                                                  .handles = handles,
-                                                  .matAA = matAA,
-                                                  .matBB = matBB,
-                                                  .matCC = matCC,
-                                                  .dBuffers = dBuffers,
-                                                  .bufferSizes = bufferSizes,
-                                                  .hA = hA,
-                                                  .hAA = hAA,
-                                                  .dAA = dAA,
-                                                  .streams = streams};
+  RuntimeData runtime_data{.A_nnz = A_nnz,
+                           .AA_nnz = AA_nnz,
+                           .B_num_rows = B_num_rows,
+                           .ldb = ldb,
+                           .ldc = ldc,
+                           .B_size = B_size,
+                           .C_size = C_size,
+                           .alpha = alpha,
+                           .beta = beta,
+                           .hB = hB,
+                           .dB = dB,
+                           .dC = dC,
+                           .handles = handles,
+                           .matAA = matAA,
+                           .matBB = matBB,
+                           .matCC = matCC,
+                           .dBuffers = dBuffers,
+                           .bufferSizes = bufferSizes,
+                           .hA = hA,
+                           .hAA = hAA,
+                           .dAA = dAA,
+                           .streams = streams};
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
 }
 
-std::tuple<std::vector<cudaEvent_t>, std::vector<cudaEvent_t>>
-compute(
-    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
-    BenchSpmmCSRPartitionedRuntimeData &runtime_data,
-    std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
-        &utility_timestamps) {
+std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
+    std::vector<std::string> &args, TimingResults &timing_results) {
+  std::vector<const char *> args_cstr;
+  for (int idx = 0; idx < args.size(); idx++) {
+    args_cstr.push_back(args[idx].c_str());
+  }
+  return generate_data_and_prepare(args_cstr.size(), args_cstr.data(),
+                                   timing_results);
+}
+
+void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+             TimingResults &timing_results) {
   // Execute SpMM
   // We nest the cuda event timing with std::chrono to make sure the cuda
   // event is getting correct results, we will use the cuda event timing
@@ -709,10 +723,12 @@ compute(
   }
 
   // Add start, stop pair in each stream to the return value
-  if (report_elapsed_time_per_stream(
-          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
-          problem_spec.nstreams)) {
-    return std::make_tuple(starts_per_stream, stops_per_stream);
+  if (report_elapsed_time_per_stream(problem_spec.enable_per_stream_timing,
+                                     problem_spec.enable_timing,
+                                     problem_spec.nstreams)) {
+    timing_results.start_events = starts_per_stream;
+    timing_results.stop_events = stops_per_stream;
+    return;
   }
 
   // Synchronize on the first stream in streams vector, and add the start, stop
@@ -720,29 +736,27 @@ compute(
   if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
-    return std::make_tuple(std::vector<cudaEvent_t>({start}),
-                           std::vector<cudaEvent_t>({stop}));
+    timing_results.start_events = std::vector<cudaEvent_t>({start});
+    timing_results.stop_events = std::vector<cudaEvent_t>({stop});
+    return;
   }
 
   // No timing should be reported
   for (int idx = 0; idx < problem_spec.nstreams; idx++) {
     CHECK_CUDA(cudaEventDestroy(stops_per_stream[idx]));
   }
-  return std::make_tuple(std::vector<cudaEvent_t>(),
-                         std::vector<cudaEvent_t>());
+  timing_results.start_events = std::vector<cudaEvent_t>();
+  timing_results.stop_events = std::vector<cudaEvent_t>();
+  return;
 }
 
-void print_timing(
-    std::vector<cudaEvent_t> starts, std::vector<cudaEvent_t> stops,
-    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
-    BenchSpmmCSRPartitionedRuntimeData &runtime_data,
-    std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
-        &utility_timestamps) {
+void print_timing(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+                  TimingResults &timing_results) {
   if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
-    cudaEvent_t start = starts.front();
-    cudaEvent_t stop = stops.front();
+    cudaEvent_t start = timing_results.start_events.front();
+    cudaEvent_t stop = timing_results.stop_events.front();
     CHECK_CUDA(cudaEventSynchronize(stop));
     float elapsed_time = 0.0f;
     CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, start, stop));
@@ -754,25 +768,27 @@ void print_timing(
     CHECK_CUDA(cudaEventDestroy(start));
     CHECK_CUDA(cudaEventDestroy(stop));
   }
-  if (report_elapsed_time_per_stream(
-          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
-          problem_spec.nstreams)) {
+  if (report_elapsed_time_per_stream(problem_spec.enable_per_stream_timing,
+                                     problem_spec.enable_timing,
+                                     problem_spec.nstreams)) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
-      CHECK_CUDA(cudaEventSynchronize(stops[idx]));
+      CHECK_CUDA(cudaEventSynchronize(timing_results.stop_events[idx]));
     }
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
       float elapsed_time = 0.0f;
-      CHECK_CUDA(cudaEventElapsedTime(&elapsed_time, starts[idx], stops[idx]));
+      CHECK_CUDA(cudaEventElapsedTime(&elapsed_time,
+                                      timing_results.start_events[idx],
+                                      timing_results.stop_events[idx]));
       printf("cusparseSpMM+CSR+Partitioned stream %d elapsed time (ms): %f\n",
              idx, elapsed_time);
       // TODO: enable throughput print
-      CHECK_CUDA(cudaEventDestroy(starts[idx]));
-      CHECK_CUDA(cudaEventDestroy(stops[idx]));
+      CHECK_CUDA(cudaEventDestroy(timing_results.start_events[idx]));
+      CHECK_CUDA(cudaEventDestroy(timing_results.stop_events[idx]));
     }
   }
 
   // Print elapsed time of utilities. Keyword "elapsed time(util) (ms):"
-  for (const auto &keyval : utility_timestamps) {
+  for (const auto &keyval : timing_results.utility_timestamps) {
     const auto &key = keyval.first;
     const auto &value = keyval.second;
     float elapsed_time_util = 0.0f;
@@ -785,9 +801,7 @@ void print_timing(
   }
 }
 
-void cleanup(
-    BenchSpmmCSRPartitionedProblemSpec &problem_spec,
-    BenchSpmmCSRPartitionedRuntimeData &runtime_data) {
+void cleanup(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
   // Destroy matrix/vector descriptors
   int idx_spmm = 0;
   for (int BB_col_idx = 0;
@@ -875,46 +889,55 @@ void cleanup(
   return;
 }
 
-// TODO: When cuda graph is enabled, the original compute stage is now creating
+// When cuda graph is enabled, the original compute stage is now creating
 // the graph, and we need a new stage that launches the graph. The rest should
-// be kept the same
-
-int main(const int argc, const char **argv) {
-  std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
-      utility_timestamps;
-  auto bench_tuple = generate_data_and_prepare(
-      argc, argv, utility_timestamps);
-  auto bench_spec = std::get<0>(bench_tuple);
-  auto bench_data = std::get<1>(bench_tuple);
+// be kept the same.
+void establish_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+                     TimingResults &timing_results) {
   std::vector<cudaGraph_t> graphs;
   std::vector<cudaGraphExec_t> graphExecs;
-  if (bench_spec.enable_graph) {
-    CHECK_CUDA(cudaStreamBeginCapture(bench_data.streams[0],
-                                      cudaStreamCaptureModeGlobal));
-  }
-  auto start_end_events = compute(
-      bench_spec, bench_data, utility_timestamps);
+  CHECK_CUDA(cudaStreamBeginCapture(runtime_data.streams[0],
+                                    cudaStreamCaptureModeGlobal));
+
+  compute(problem_spec, runtime_data, timing_results);
 
   // Only stream idx 0 needs to be captured because other stream waits on the
   // start event of stream idx 0, and stream idx 0 waits on the stop event of
   // other streams Reference:
   // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cross-stream-dependencies-and-events
-  if (bench_spec.enable_graph) {
-    cudaGraph_t graph;
-    cudaGraphExec_t graphExec = NULL;
-    CHECK_CUDA(cudaStreamEndCapture(bench_data.streams[0], &graph));
-    cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
-    graphs.push_back(graph);
-    graphExecs.push_back(graphExec);
+  cudaGraph_t graph;
+  cudaGraphExec_t graphExec = NULL;
+  CHECK_CUDA(cudaStreamEndCapture(runtime_data.streams[0], &graph));
+  cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0);
+  graphs.push_back(graph);
+  graphExecs.push_back(graphExec);
 
-    CHECK_CUDA(cudaGraphLaunch(graphExecs[0], bench_data.streams[0]));
-    CHECK_CUDA(cudaStreamSynchronize(bench_data.streams[0]));
+  runtime_data.graphs = graphs;
+  runtime_data.graphExecs = graphExecs;
+
+  return;
+}
+
+void launch_graph(RuntimeData &runtime_data) {
+  CHECK_CUDA(
+      cudaGraphLaunch(runtime_data.graphExecs[0], runtime_data.streams[0]));
+  CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[0]));
+}
+
+int main(const int argc, const char **argv) {
+  TimingResults timing_results;
+  auto bench_tuple = generate_data_and_prepare(argc, argv, timing_results);
+  auto bench_spec = std::get<0>(bench_tuple);
+  auto bench_data = std::get<1>(bench_tuple);
+
+  if (bench_spec.enable_graph) {
+    establish_graph(bench_spec, bench_data, timing_results);
+    launch_graph(bench_data);
+  } else {
+    compute(bench_spec, bench_data, timing_results);
   }
-  auto start = std::get<0>(start_end_events);
-  auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing || bench_spec.test_API_on_stream) {
-    print_timing(start, stop, bench_spec, bench_data,
-                                            utility_timestamps);
+    print_timing(bench_spec, bench_data, timing_results);
   }
   cleanup(bench_spec, bench_data);
   return 0;
