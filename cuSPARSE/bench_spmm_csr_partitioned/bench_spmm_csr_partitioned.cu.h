@@ -779,7 +779,7 @@ void print_timing(ProblemSpec &problem_spec, RuntimeData &runtime_data,
       CHECK_CUDA(cudaEventElapsedTime(&elapsed_time,
                                       timing_results.start_events[idx],
                                       timing_results.stop_events[idx]));
-      printf("cusparseSpMM+CSR+Partitioned stream %d elapsed time (ms): %f\n",
+      printf("cusparseSpMM+CSR+Partitioned elapsed time(stream%d) (ms): %f\n",
              idx, elapsed_time);
       // TODO: enable throughput print
       CHECK_CUDA(cudaEventDestroy(timing_results.start_events[idx]));
