@@ -517,7 +517,7 @@ void print_timing(ProblemSpec &bench_spec, TimingResults &timing_results) {
       CUDA_CHECK(cudaEventElapsedTime(&elapsed_time,
                                       timing_results.start_events[idx],
                                       timing_results.stop_events[idx]));
-      printf("cublasSgemmPartitioned elapsed(stream%d) time (ms): %f\n", idx,
+      printf("cublasSgemmPartitioned elapsed time(streamIdx%d) (ms): %f\n", idx,
              elapsed_time);
       // TODO: enable throughput print
       // printf("cublasSgemmPartitioned stream %d throughput (GFLOPS): %f\n",
