@@ -298,9 +298,9 @@ std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
       .nstreams = nstreams};
-  RuntimeData runtime_data = {//.lda = lda,
-                              //.ldb = ldb,
-                              //.ldc = ldc,
+  RuntimeData runtime_data = {//.lda not set
+                              //.ldb not set
+                              //.ldc not set
                               .alpha = alpha,
                               .beta = beta,
                               .transa = transa,
@@ -490,7 +490,8 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
   timing_results.stop_events = std::vector<cudaEvent_t>();
 }
 
-void print_timing(ProblemSpec &bench_spec, TimingResults &timing_results) {
+void consume_and_print_timing(ProblemSpec &bench_spec,
+                              TimingResults &timing_results) {
   if (wait_streams_on_first_and_report_that_as_elapsed_time(
           bench_spec.enable_per_stream_timing, bench_spec.enable_timing,
           bench_spec.nstreams)) {
@@ -512,6 +513,7 @@ void print_timing(ProblemSpec &bench_spec, TimingResults &timing_results) {
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
       CUDA_CHECK(cudaEventSynchronize(timing_results.stop_events[idx]));
     }
+
     for (int idx = 0; idx < bench_spec.nstreams; idx++) {
       float elapsed_time = 0.0f;
       CUDA_CHECK(cudaEventElapsedTime(&elapsed_time,
@@ -644,15 +646,47 @@ int main(const int argc, const char **argv) {
   auto bench_data = std::get<1>(bench_tuple);
 
   if (bench_spec.enable_graph) {
+    std::chrono::time_point<std::chrono::system_clock> graph_creation_beg,
+        graph_creation_end, graph_initialization_end, graph_execution_end;
+    graph_creation_beg = std::chrono::system_clock::now();
     create_graph(bench_spec, bench_data, timing_results);
+
+    graph_creation_end = std::chrono::system_clock::now();
     initiate_graph(bench_data);
+
+    graph_initialization_end = std::chrono::system_clock::now();
     launch_graph_and_wait(bench_data);
+    graph_execution_end = std::chrono::system_clock::now();
+    printf(
+        "[DEBUG] cublasSgemmPartitioned graph creation chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_creation_end - graph_creation_beg)
+            .count());
+    printf(
+        "[DEBUG] cublasSgemmPartitioned graph initialization chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_initialization_end - graph_creation_end)
+            .count());
+    printf(
+        "[DEBUG] cublasSgemmPartitioned graph execution chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_execution_end - graph_initialization_end)
+            .count());
   } else {
     compute(bench_spec, bench_data, timing_results);
   }
 
-  if (bench_spec.enable_timing) {
-    print_timing(bench_spec, timing_results);
+  // When CUDA graph is enabled, we already wait until it finishes. Both
+  // synchronize event inside the graph or measuring the elapsed time between
+  // two events will trigger an error
+  if (bench_spec.enable_timing && !bench_spec.enable_graph) {
+    consume_and_print_timing(bench_spec, timing_results);
   }
   if (bench_spec.enable_graph) {
     CUDA_CHECK(cudaGraphExecDestroy(bench_data.graphExecs[0]));

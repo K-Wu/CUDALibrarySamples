@@ -761,8 +761,9 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   return;
 }
 
-void print_timing(ProblemSpec &problem_spec, RuntimeData &runtime_data,
-                  TimingResults &timing_results) {
+void consume_and_print_timing(ProblemSpec &problem_spec,
+                              RuntimeData &runtime_data,
+                              TimingResults &timing_results) {
   if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
@@ -785,6 +786,7 @@ void print_timing(ProblemSpec &problem_spec, RuntimeData &runtime_data,
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
       CHECK_CUDA(cudaEventSynchronize(timing_results.stop_events[idx]));
     }
+
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
       float elapsed_time = 0.0f;
       CHECK_CUDA(cudaEventElapsedTime(&elapsed_time,
@@ -948,14 +950,47 @@ int main(const int argc, const char **argv) {
   auto bench_data = std::get<1>(bench_tuple);
 
   if (bench_spec.enable_graph) {
+    std::chrono::time_point<std::chrono::system_clock> graph_creation_beg,
+        graph_creation_end, graph_initialization_end, graph_execution_end;
+    graph_creation_beg = std::chrono::system_clock::now();
     create_graph(bench_spec, *(bench_data.get()), timing_results);
+
+    graph_creation_end = std::chrono::system_clock::now();
     initiate_graph(*(bench_data.get()));
+
+    graph_initialization_end = std::chrono::system_clock::now();
     launch_graph_and_wait(*(bench_data.get()));
+    graph_execution_end = std::chrono::system_clock::now();
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph creation chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_creation_end - graph_creation_beg)
+            .count());
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph initialization chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_initialization_end - graph_creation_end)
+            .count());
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph execution chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_execution_end - graph_initialization_end)
+            .count());
   } else {
     compute(bench_spec, *(bench_data.get()), timing_results);
   }
-  if (bench_spec.enable_timing || bench_spec.test_API_on_stream) {
-    print_timing(bench_spec, *(bench_data.get()), timing_results);
+  // When CUDA graph is enabled, we already wait until it finishes. Both
+  // synchronize event inside the graph or measuring the elapsed time between
+  // two events will trigger an error
+  if ((bench_spec.enable_timing || bench_spec.test_API_on_stream) &&
+      !bench_spec.enable_graph) {
+    consume_and_print_timing(bench_spec, *(bench_data.get()), timing_results);
   }
   if (bench_spec.enable_graph) {
     CHECK_CUDA(cudaGraphExecDestroy(bench_data.get()->graphExecs[0]));

@@ -269,7 +269,7 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
   return std::make_tuple(start, stop);
 }
 
-void print_timing_bench_gemm(
+void consume_and_print_timing_bench_gemm(
     cudaEvent_t start, cudaEvent_t stop, BenchGEMMProblemSpec &bench_spec,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
@@ -359,7 +359,8 @@ int main_bench_gemm(const int argc, const char **argv) {
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing) {
-    print_timing_bench_gemm(start, stop, bench_spec, utility_timestamps);
+    consume_and_print_timing_bench_gemm(start, stop, bench_spec,
+                                        utility_timestamps);
   }
   cleanup_bench_gemm(bench_spec, bench_data);
   return 0;
