@@ -594,7 +594,6 @@ void cleanup(ProblemSpec &bench_spec, RuntimeData &bench_data) {
     CUBLAS_CHECK(cublasDestroy(bench_data.cublasHs[idx]));
     CUDA_CHECK(cudaStreamDestroy(bench_data.streams[idx]));
   }
-  CUDA_CHECK(cudaDeviceReset());
   return;
 }
 
