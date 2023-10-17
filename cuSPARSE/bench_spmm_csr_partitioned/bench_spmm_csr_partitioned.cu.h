@@ -285,9 +285,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
     AA_nnz.push_back(AA.num_entries);
   }
   A_nnz = hA.values.size();
-  printf(
-      "actual A_nnz using non-dup random data generation: %d\n",
-      A_nnz);
+  printf("actual A_nnz using non-dup random data generation: %d\n", A_nnz);
 
   cudaEvent_t handle_creation_start, handle_creation_stop;
   cudaEvent_t test_API_0_handle_creation_start, test_API_0_handle_creation_stop;
@@ -393,7 +391,8 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   //--------------------------------------------------------------------------
   // CUSPARSE APIs
 
-  // Create the RuntimeData struct so that the cusparse handle creation could get pointers to the matrix data
+  // Create the RuntimeData struct so that the cusparse handle creation could
+  // get pointers to the matrix data
   RuntimeData runtime_data{.A_nnz = A_nnz,
                            .AA_nnz = AA_nnz,
                            .B_num_rows = B_num_rows,
@@ -407,11 +406,11 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
                            .dB = dB,
                            .dC = dC,
                            .handles = handles,
-                          //  .matAA empty vector,
-                          //  .matBB empty vector,
-                          //  .matCC empty vector,   
-                          //  .dBuffers empty vector,
-                          //  .bufferSizes empty vector,
+                           //  .matAA empty vector,
+                           //  .matBB empty vector,
+                           //  .matCC empty vector,
+                           //  .dBuffers empty vector,
+                           //  .bufferSizes empty vector,
                            .hA = hA,
                            .hAA = hAA,
                            .dAA = dAA,
@@ -445,19 +444,23 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
           // Create sparse matrix A in CSR format
           cusparseSpMatDescr_t curr_matAA;
           int curr_AA_nnz =
-              runtime_data.dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+              runtime_data
+                  .dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
                   .num_entries;
           CHECK_CUSPARSE(cusparseCreateCsr(
               &curr_matAA, AA_num_rows, AA_num_cols, curr_AA_nnz,
               // dA_csrOffsets, dA_columns, dA_values,
               (void *)thrust::raw_pointer_cast(
-                  runtime_data.dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  runtime_data
+                      .dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
                       .row_offsets.data()),
               (void *)thrust::raw_pointer_cast(
-                  runtime_data.dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  runtime_data
+                      .dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
                       .column_indices.data()),
               (void *)thrust::raw_pointer_cast(
-                  runtime_data.dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
+                  runtime_data
+                      .dAA[AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows]
                       .values.data()),
               CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
               CUDA_R_32F))
@@ -505,9 +508,10 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
         // Allocate an external buffer if needed
         CHECK_CUSPARSE(cusparseSpMM_bufferSize(
             handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
-            CUSPARSE_OPERATION_NON_TRANSPOSE, &(alpha), runtime_data.matAA[idx_AA],
-            runtime_data.matBB[idx_BB], &(beta), runtime_data.matCC[idx_CC], CUDA_R_32F,
-            CUSPARSE_SPMM_ALG_DEFAULT, &curr_bufferSize))
+            CUSPARSE_OPERATION_NON_TRANSPOSE, &(alpha),
+            runtime_data.matAA[idx_AA], runtime_data.matBB[idx_BB], &(beta),
+            runtime_data.matCC[idx_CC], CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
+            &curr_bufferSize))
         // TODO: switch to memcpy async
         CHECK_CUDA(cudaMalloc(&curr_dBuffer, curr_bufferSize))
         runtime_data.dBuffers.push_back(curr_dBuffer);
@@ -569,8 +573,9 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
           flag_specify_result_path_and_prefix,
       .test_API_on_stream = test_API_on_stream,
       .nstreams = nstreams};
-  printf("dAA[0].values %p\n",runtime_data.dAA[0].values.data());
-  auto bench_tuple = std::make_tuple(problem_spec, std::make_shared<RuntimeData>(std::move(runtime_data)));
+  printf("dAA[0].values %p\n", runtime_data.dAA[0].values.data());
+  auto bench_tuple = std::make_tuple(
+      problem_spec, std::make_shared<RuntimeData>(std::move(runtime_data)));
   return bench_tuple;
 }
 
@@ -593,8 +598,8 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   std::chrono::time_point<std::chrono::system_clock> beg, end;
   // Start and stop when
   // wait_streams_on_first_and_report_that_as_elapsed_time
-  
-  printf("dAA[0].values %p\n",runtime_data.dAA[0].values.data());
+
+  printf("dAA[0].values %p\n", runtime_data.dAA[0].values.data());
 
   cudaEvent_t start, stop;
   std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
@@ -604,7 +609,6 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
   }
-
   // We need stop event per stream to synchronize before reduction no matter
   // timing is enabled or not
   for (int idx = 0; idx < problem_spec.nstreams; idx++) {
@@ -617,9 +621,9 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
     // We need stop event per stream to synchronize before reduction no matter
     // timing is enabled or not
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
-      cudaEvent_t stop_per_stream;
-      CHECK_CUDA(cudaEventCreate(&stop_per_stream));
-      stops_per_stream.push_back(stop_per_stream);
+      cudaEvent_t start_per_stream;
+      CHECK_CUDA(cudaEventCreate(&start_per_stream));
+      starts_per_stream.push_back(start_per_stream);
     }
   }
 
@@ -629,11 +633,13 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
     CHECK_CUDA(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
+
   if (wait_streams_on_first_and_report_that_as_elapsed_time(
           problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
           problem_spec.nstreams)) {
     CHECK_CUDA(cudaEventRecord(start, runtime_data.streams.front()));
   }
+
   if (problem_spec.enable_timing) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
       if (wait_streams_on_first_and_report_that_as_elapsed_time(
@@ -674,7 +680,7 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
                                       problem_spec.AA_num_cols;
         int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
-        
+
         CHECK_CUSPARSE(cusparseSpMM(
             runtime_data.handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
@@ -714,6 +720,7 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
       CHECK_CUDA(cudaEventRecord(stop, runtime_data.streams.front()));
     }
   }
+
   if (problem_spec.enable_debug_timing) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++)
       CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[idx]));
@@ -783,8 +790,9 @@ void print_timing(ProblemSpec &problem_spec, RuntimeData &runtime_data,
       CHECK_CUDA(cudaEventElapsedTime(&elapsed_time,
                                       timing_results.start_events[idx],
                                       timing_results.stop_events[idx]));
-      printf("cusparseSpMM+CSR+Partitioned elapsed time(streamIdx%d) (ms): %f\n",
-             idx, elapsed_time);
+      printf(
+          "cusparseSpMM+CSR+Partitioned elapsed time(streamIdx%d) (ms): %f\n",
+          idx, elapsed_time);
       // TODO: enable throughput print
       CHECK_CUDA(cudaEventDestroy(timing_results.start_events[idx]));
       CHECK_CUDA(cudaEventDestroy(timing_results.stop_events[idx]));
