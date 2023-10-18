@@ -784,6 +784,11 @@ void consume_and_print_timing(ProblemSpec &problem_spec,
                                      problem_spec.enable_timing,
                                      problem_spec.nstreams)) {
     for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      // Skip the first stream if it is already synchronized and destroyed
+      if (idx == 0 && wait_streams_on_first_and_report_that_as_elapsed_time(
+                          problem_spec.enable_per_stream_timing,
+                          problem_spec.enable_timing, problem_spec.nstreams))
+        continue;
       CHECK_CUDA(cudaEventSynchronize(timing_results.stop_events[idx]));
     }
 
