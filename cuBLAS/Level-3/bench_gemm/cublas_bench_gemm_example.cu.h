@@ -96,6 +96,14 @@ struct BenchGEMMRuntimeData {
   cublasHandle_t cublasH;
 };
 
+void print_gemm_usage() {
+  printf(
+      "Usage: bench_gemm --m=## --n=## --k=## [--enable_dump] "
+      "[--result_path_and_prefix=...] [--enable_timing] "
+      "[--enable_debug_timing]\n");
+  // TODO: print the meaning of each argument
+}
+
 std::tuple<BenchGEMMProblemSpec, BenchGEMMRuntimeData>
 generate_data_and_prepare_bench_gemm(
     const int argc, const char **argv,
@@ -115,11 +123,7 @@ generate_data_and_prepare_bench_gemm(
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (m == 0 || n == 0 || k == 0) {
-    printf(
-        "Usage: %s --m=## --n=## --k=## [--enable_dump] "
-        "[--result_path_and_prefix=...] [--enable_timing] "
-        "[--enable_debug_timing]\n",
-        argv[0]);
+    print_gemm_usage();
     exit(EXIT_FAILURE);
   }
   int lda = m;
@@ -265,7 +269,7 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_gemm(
   return std::make_tuple(start, stop);
 }
 
-void print_timing_bench_gemm(
+void consume_and_print_timing_bench_gemm(
     cudaEvent_t start, cudaEvent_t stop, BenchGEMMProblemSpec &bench_spec,
     std::map<std::string, std::tuple<cudaEvent_t, cudaEvent_t>>
         &utility_timestamps) {
@@ -355,7 +359,8 @@ int main_bench_gemm(const int argc, const char **argv) {
   auto start = std::get<0>(start_end_events);
   auto stop = std::get<1>(start_end_events);
   if (bench_spec.enable_timing) {
-    print_timing_bench_gemm(start, stop, bench_spec, utility_timestamps);
+    consume_and_print_timing_bench_gemm(start, stop, bench_spec,
+                                        utility_timestamps);
   }
   cleanup_bench_gemm(bench_spec, bench_data);
   return 0;

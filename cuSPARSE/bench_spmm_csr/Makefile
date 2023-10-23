@@ -50,7 +50,7 @@ LIBS         := -lcudart -lcusparse
 
 all: bench_spmm_csr
 
-bench_spmm_csr: bench_spmm_csr.cu
+bench_spmm_csr: bench_spmm_csr.cu bench_spmm_csr.cu.h
 	nvcc -std=c++17 $(INC) bench_spmm_csr.cu -o bench_spmm_csr $(LIBS)
 
 clean:

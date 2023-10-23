@@ -164,7 +164,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
   generate_random_matrix(hA, A_size);
   generate_random_matrix(hB, B_size);
   cusp::csr_matrix<int, float, cusp::host_memory> hC =
-      generate_random_sparse_matrix<
+      generate_random_sparse_matrix_nodup<
           cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
                                                            B_num_cols, C_nnz);
   //printf(
