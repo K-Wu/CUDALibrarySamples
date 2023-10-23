@@ -77,31 +77,31 @@
       exit(EXIT_FAILURE);                                                     \
     }                                                                          \
   }
- 
+//81 - 112 was "new code" added (not moved from elsewhere or merely edited) in bench_spmm example. Should I cope them into bench_sddmm too?? Would all the variable names be the same? Lawrence 
 struct BenchSddmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
   int B_num_cols;
-  float C_sparsity;
+  float A_sparsity;
   bool enable_dump;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
 };
 
 struct BenchSddmmCSRRuntimeData {
-  int C_nnz;
+  int A_nnz;
   int B_num_rows;
-  int lda;
   int ldb;
-  int A_size;
+  int ldc;
   int B_size;
+  int C_size;
   float alpha;
   float beta;
-  float *hA, *hB;
-  float *dB, *dA;
+  float *hB;
+  float *dB, *dC;
   cusparseHandle_t handle;
-  cusparseDnMatDescr_t matA, matB;
-  cusparseSpMatDescr_t matC;
+  cusparseSpMatDescr_t matA;
+  cusparseDnMatDescr_t matB, matC;
   void *dBuffer;
   size_t bufferSize;
   cusp::csr_matrix<int, float, cusp::host_memory> hA;
@@ -138,11 +138,11 @@ generate_data_and_prepare(const int argc, const char **argv) {
   int B_size = ldb * B_num_rows;
   float alpha = 1.0f;
   float beta = 0.0f;
-  float *hA, *hB;
-  float *dB, *dA;
+  float *hB;
+  float *dB, *dC;
   cusparseHandle_t handle = NULL;
-  cusparseDnMatDescr_t matA, matB;
-  cusparseSpMatDescr_t matC;
+  cusparseSpMatDescr_t matA;
+  cusparseDnMatDescr_t matB, matC;
   void *dBuffer = NULL;
   size_t bufferSize = 0;
 
@@ -159,8 +159,10 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // int   hC_columns[] = { 0, 1, 2, 1, 0, 1, 2, 0, 2 };
   // float hC_values[]  = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   //                        0.0f, 0.0f, 0.0f, 0.0f };
-  hA = (float *)malloc(sizeof(float) * A_size);
-  hB = (float *)malloc(sizeof(float) * B_size); 
+  float *hA = (float *)malloc(A_size * sizeof(float));
+  float *hB = (float *)malloc(B_size * sizeof(float));
+  //hA = (float *)malloc(sizeof(float) * A_size);
+  //hB = (float *)malloc(sizeof(float) * B_size); (needed??)
   generate_random_matrix(hA, A_size);
   generate_random_matrix(hB, B_size);
   cusp::csr_matrix<int, float, cusp::host_memory> hC =
@@ -168,7 +170,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
           cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
                                                            B_num_cols, C_nnz);
   //printf(
-  //  "actual C_nnz due to deduplication during random data generation: %d\n", C_nnz);
+  //  "actual A_nnz due to deduplication during random data generation: %d\n", A_nnz);
   cusp::csr_matrix<int, float, cusp::device_memory> dC(hC);
 
   //--------------------------------------------------------------------------
@@ -195,25 +197,24 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // CHECK_CUDA( cudaMemcpy(dC_values, hC_values, C_nnz * sizeof(float),
   //                        cudaMemcpyHostToDevice) )
   //--------------------------------------------------------------------------
-  //201 - 220: Uncertain whether all variable names are correct (Lawrence)
+  //Correct declarations???? 201-220; also capitalized SDDMM? (Lawrence)
 BenchSddmmCSRProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
-      .C_sparsity = C_sparsity,
+      .A_sparsity = A_sparsity,
       .enable_dump = enable_dump,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
   };
-
   BenchSddmmCSRRuntimeData runtime_data{
-      .C_nnz = C_nnz,
+      .A_nnz = A_nnz,
       .B_num_rows = B_num_rows,
-      .lda = lda,
       .ldb = ldb,
-      .A_size = A_size,
+      .ldc = ldc,
       .B_size = B_size,
+      .C_size = C_size,
       .alpha = alpha,
       .beta = beta,
       .hB = hB,
@@ -243,13 +244,11 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   size_t bufferSize = 0;
   CHECK_CUSPARSE(cusparseCreate(&handle))
   // Create dense matrix A
-  CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matA), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.ldA, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matA, A_num_rows, A_num_cols, lda, dA,
+                                     CUDA_R_32F, CUSPARSE_ORDER_ROW))
   // Create dense matrix B
-  CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.ldb, runtime_data.dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matB, A_num_cols, B_num_cols, ldb, dB,
+                                     CUDA_R_32F, CUSPARSE_ORDER_ROW))
   // Create sparse matrix C in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
       //original &matC, A_num_rows, B_num_cols, C_nnz,
@@ -261,6 +260,8 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
       (void *)thrust::raw_pointer_cast(runtime_data.dC.values.data()),
       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
       CUDA_R_32F))
+  // did not create dense matrix B or C like spmm example (Lawrence)
+
 
   // allocate an external buffer if needed
   CHECK_CUSPARSE(cusparseSDDMM_bufferSize(
@@ -291,7 +292,9 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   beg = std::chrono::system_clock::now();
   CHECK_CUDA(cudaEventRecord(start));
-  CHECK_CUSPARSE(    
+//double check variables (Lawrence) 
+  CHECK_CUSPARSE(
+//Capital SDDMM? (Lawrnece)      
       cusparseSDDMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
@@ -305,7 +308,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   printf("cusparseSDDMM+CSR elapsed time (ms): %f\n", elapsed_time);
   printf("cusparseSDDMM+CSR throughput (GFLOPS): %f\n",
-         (2.0 * problem_spec.A_num_rows * problem_spec.B_num_cols * problem_spec.A_num_cols) /
+         (2.0 * runtime_data.A_nnz * problem_spec.B_num_cols) /
              (elapsed_time / 1000.0) / 1e9);
   printf(
       "[DEBUG] cusparseSDDMM chrono time (microseconds): %ld\n",
@@ -316,12 +319,13 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   void cleanup(BenchSddmmCSRProblemSpec problem_spec,
              BenchSddmmSRRuntimeData runtime_data) {
   // Destroy matrix/vector descriptors
-  // matA & matB dense, matC sparse 
+  // in example it was "Sp; Dn; Dn" though the original code here had "Dn; Dn; Sp" for matA, matB, matC respectively. I stayed consistent with this file (sddmm) Lawrence
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
   CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matC))
   CHECK_CUSPARSE(cusparseDestroy(runtime_data.handle))
 
+  //no "enable_dump" if statement or "Get current timestamp" section; line 290 to 326 in bench_spmm example (Lawrence Cheng)
   //--------------------------------------------------------------------------
   // device result check
   // CHECK_CUDA( cudaMemcpy(hC_values,
@@ -355,6 +359,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   // CHECK_CUDA( cudaFree(dC_values) )
 }
 
+//Necessary?
 int main_bench_sddmm_csr(const int argc, const char **argv) {
   auto bench_tuple = generate_data_and_prepare(argc, argv);
   auto bench_spec = std::get<0>(bench_tuple);
