@@ -423,3 +423,4 @@ int main_bench_gemm_partitioned(const int argc, const char **argv) {
   cleanup_bench_gemm_partitioned(bench_spec, bench_data);
   return 0;
 }
+
