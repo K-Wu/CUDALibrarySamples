@@ -267,7 +267,7 @@ std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
   CUDA_CHECK(cudaMalloc(
       reinterpret_cast<void **>(&d_C),
       sizeof(data_type) * C.size() *
-          (k / kk + 1)));  // Need k times the size to store output of the
+          (1 + 1)));  // Need k times the size to store output of the
                            // partitioned kernels and 1 original size to store
                            // the final accumulated results
 
@@ -404,7 +404,7 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
             bench_data.d_A + i * bench_spec.mm + l * bench_spec.kk * lda, lda,
             bench_data.d_B + l * bench_spec.kk + j * bench_spec.nn * ldb, ldb,
             &(bench_data.beta),
-            bench_data.d_C + l * bench_spec.m * bench_spec.n +
+            bench_data.d_C + l * bench_spec.mm * bench_spec.nn +
                 i * bench_spec.mm + j * bench_spec.nn * ldc,
             ldc));
       }
@@ -431,8 +431,8 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
       <<<nblocks, nthreads, 0, bench_data.streams.front()>>>(
           bench_data.d_C,
           bench_data.d_C +
-              bench_spec.k / bench_spec.kk * bench_spec.m * bench_spec.n,
-          bench_spec.m, bench_spec.n, bench_spec.m,
+              bench_spec.k / bench_spec.kk * bench_spec.mm * bench_spec.nn,
+          bench_spec.mm,  bench_spec.mm,bench_spec.nn,
           bench_spec.k / bench_spec.kk);
 
   if (bench_spec.enable_timing) {

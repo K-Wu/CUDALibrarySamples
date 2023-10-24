@@ -96,6 +96,7 @@ struct BenchSpmmCSRProblemSpec {
   bool enable_dump;
   bool enable_timing;
   bool enable_debug_timing;
+  bool enable_preprocess;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
 };
@@ -141,6 +142,7 @@ generate_data_and_prepare_bench_spmm_csr(
   float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
   bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
+  bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
   bool enable_debug_timing =
       checkCmdLineFlag(argc, argv, "enable_debug_timing");
   char *cli_result_path_and_prefix;
@@ -307,6 +309,7 @@ generate_data_and_prepare_bench_spmm_csr(
       .enable_dump = enable_dump,
       .enable_timing = enable_timing,
       .enable_debug_timing = enable_debug_timing,
+      .enable_preprocess = enable_preprocess,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
@@ -340,6 +343,14 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
   }
   if (problem_spec.enable_timing)
     CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
+
+  if (problem_spec.enable_preprocess)
+    CHECK_CUSPARSE(cusparseSpMM_preprocess(
+        runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
+        runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
+        runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
+        &(runtime_data.dBuffer)));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),

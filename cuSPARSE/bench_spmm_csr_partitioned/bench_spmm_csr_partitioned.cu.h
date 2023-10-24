@@ -112,6 +112,7 @@ struct ProblemSpec {
   bool enable_per_stream_timing;
   bool enable_debug_timing;
   bool enable_graph;
+  bool enable_preprocess;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
   bool test_API_on_stream;
@@ -139,7 +140,6 @@ struct RuntimeData {
   cusp::csr_matrix<int, float, cusp::host_memory> hA;
   std::vector<cusp::csr_matrix<int, float, cusp::host_memory>> hAA;
   std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
-  // TODO: support multiple stream
   // The recommended way is to switch stream before CUSPARSE compute APIs by
   // cusparseSetStream() And in practice concurrent kernels won't be larger than
   // 16 https://docs.nvidia.com/cuda/cusparse/index.html#thread-safety
@@ -162,6 +162,7 @@ void print_usage() {
       "--enable_debug_timing also records the elapsed time of the computation\n"
       "function; but it adds device synchronization and uses chrono to record\n"
       "the timing\n"
+      "--enable_preprocess enables the cusparse preprocessing, i.e., autotuning to find the optimized schedule for the given problem size and sparse pattern\n"
       "--enable_per_stream_timing prints the elapsed time on every stream of\n"
       "the computation function (not implemented yet)\n"
       "When there is single stream, --enable_timing has the same meaning as\n"
@@ -203,6 +204,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   bool test_API_on_stream = checkCmdLineFlag(argc, argv, "test_API_on_stream");
   bool enable_debug_timing =
       checkCmdLineFlag(argc, argv, "enable_debug_timing");
+  bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
@@ -379,7 +381,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
     CHECK_CUDA(cudaEventRecord(data_copy_start, streams.front()));
   }
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
-  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * (1+1) * sizeof(float)))
 
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
@@ -482,7 +484,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
           CHECK_CUSPARSE(
               cusparseCreateDnMat(&curr_matCC, AA_num_rows, BB_num_cols, ldc,
                                   dC + AA_row_idx * AA_num_rows +
-                                      BB_col_idx * BB_num_cols * A_num_rows,
+                                      BB_col_idx * BB_num_cols * AA_num_rows,
                                   CUDA_R_32F, CUSPARSE_ORDER_COL))
           runtime_data.matCC.push_back(curr_matCC);
         }
@@ -568,6 +570,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
       .enable_per_stream_timing = enable_per_stream_timing,
       .enable_debug_timing = enable_debug_timing,
       .enable_graph = enable_graph,
+      .enable_preprocess = enable_preprocess,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
@@ -587,6 +590,48 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   }
   return generate_data_and_prepare(args_cstr.size(), args_cstr.data(),
                                    timing_results);
+}
+
+void preprocess(ProblemSpec & problem_spec, RuntimeData & runtime_data){
+  for (int BB_col_idx = 0;
+       BB_col_idx < problem_spec.B_num_cols / problem_spec.BB_num_cols;
+       BB_col_idx++) {
+    for (int AA_col_idx = 0;
+         AA_col_idx < problem_spec.A_num_cols / problem_spec.AA_num_cols;
+         AA_col_idx++) {
+      for (int AA_row_idx = 0;
+           AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
+           AA_row_idx++) {
+        auto [idx_spmm, num_spmms] = get_canonical_loop_index_and_bound(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows});
+        int idx_stream =
+            getCurrStream({BB_col_idx, AA_col_idx, AA_row_idx},
+                          {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                           problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                           problem_spec.A_num_rows / problem_spec.AA_num_rows},
+                          problem_spec.nstreams);
+        int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
+                                      problem_spec.AA_num_rows;
+        int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
+                                      problem_spec.AA_num_cols;
+        int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
+                                      problem_spec.AA_num_rows;
+
+        CHECK_CUSPARSE(cusparseSpMM_preprocess(
+            runtime_data.handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
+            CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
+            runtime_data.matAA[idx_AA], runtime_data.matBB[idx_BB],
+            &(runtime_data.beta), runtime_data.matCC[idx_CC], CUDA_R_32F,
+            CUSPARSE_SPMM_ALG_DEFAULT, runtime_data.dBuffers[idx_spmm]))
+
+        // idx_spmm++;
+      }
+    }
+  }
+
 }
 
 void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
@@ -702,7 +747,26 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
                                    stops_per_stream[idx]));
   }
 
-  // TODO: need to add reduce_segements
+  // Accumulate the result
+  // TODO: define BLOCK_SIZE and SHMEM_SIZE
+  constexpr int BLOCK_SIZE = 256;
+  constexpr int SHMEM_SIZE = 256;
+  assert(problem_spec.A_num_rows * problem_spec.B_num_cols % SHMEM_SIZE == 0);
+  dim3 nblocks(problem_spec.A_num_rows * problem_spec.B_num_cols / SHMEM_SIZE,
+               problem_spec.A_num_cols / problem_spec.AA_num_cols, 1);
+  dim3 nthreads(BLOCK_SIZE, 1, 1);
+  reduce_segments<BLOCK_SIZE, SHMEM_SIZE, float>
+      <<<nblocks, nthreads, 0, runtime_data.streams.front()>>>(
+          runtime_data.dC,
+          runtime_data.dC +
+             problem_spec.A_num_cols / problem_spec.AA_num_cols * problem_spec.AA_num_rows * problem_spec.BB_num_cols,
+          problem_spec.AA_num_rows, problem_spec.AA_num_rows, problem_spec.BB_num_cols, 
+          problem_spec.A_num_cols / problem_spec.AA_num_cols);
+
+  if (problem_spec.enable_timing) {
+    CHECK_CUDA(cudaEventRecord(stops_per_stream[0], runtime_data.streams[0]));
+  }
+
 
   if (problem_spec.enable_timing)
     CHECK_CUDA(cudaEventRecord(stops_per_stream.front(),
@@ -953,6 +1017,10 @@ int main(const int argc, const char **argv) {
   auto bench_tuple = generate_data_and_prepare(argc, argv, timing_results);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
+
+  if (bench_spec.enable_preprocess){
+    preprocess(bench_spec, *(bench_data.get()));
+  }
 
   if (bench_spec.enable_graph) {
     std::chrono::time_point<std::chrono::system_clock> graph_creation_beg,
