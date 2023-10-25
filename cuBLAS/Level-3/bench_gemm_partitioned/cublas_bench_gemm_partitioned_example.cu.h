@@ -264,12 +264,12 @@ std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
                         sizeof(data_type) * A.size()));
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B),
                         sizeof(data_type) * B.size()));
-  CUDA_CHECK(cudaMalloc(
-      reinterpret_cast<void **>(&d_C),
-      sizeof(data_type) * C.size() *
-          (1 + 1)));  // Need k times the size to store output of the
-                           // partitioned kernels and 1 original size to store
-                           // the final accumulated results
+  CUDA_CHECK(
+      cudaMalloc(reinterpret_cast<void **>(&d_C),
+                 sizeof(data_type) * C.size() *
+                     (1 + 1)));  // Need k times the size to store output of the
+                                 // partitioned kernels and 1 original size to
+                                 // store the final accumulated results
 
   CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(data_type) * A.size(),
                              cudaMemcpyHostToDevice, streams.front()));
@@ -432,7 +432,7 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
           bench_data.d_C,
           bench_data.d_C +
               bench_spec.k / bench_spec.kk * bench_spec.mm * bench_spec.nn,
-          bench_spec.mm,  bench_spec.mm,bench_spec.nn,
+          bench_spec.mm, bench_spec.mm, bench_spec.nn,
           bench_spec.k / bench_spec.kk);
 
   if (bench_spec.enable_timing) {
@@ -567,7 +567,9 @@ void cleanup(ProblemSpec &bench_spec, RuntimeData &bench_data) {
     std::tm tm = *std::localtime(&t);
     char time_str[64];
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
-    const char *result_path_and_prefix;
+    // We should store the string in a std::string because when the .c_str()
+    // pointer is referenced, the std::string object should not be destroyed
+    std::string result_path_and_prefix;
     if (!bench_spec.flag_specify_result_path_and_prefix) {
       result_path_and_prefix =
           (std::string("cublas_bench_gemm_partitioned.") + time_str).c_str();
@@ -576,20 +578,19 @@ void cleanup(ProblemSpec &bench_spec, RuntimeData &bench_data) {
     }
     result_path_and_prefix = nullptr;
     // Store m, n, k to a txt and store A, B, C to a numpy file
-    FILE *fp =
-        fopen((std::string(result_path_and_prefix) + ".txt").c_str(), "w");
+    FILE *fp = fopen((result_path_and_prefix + ".txt").c_str(), "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d\n", bench_spec.m, bench_spec.n, bench_spec.k);
     fclose(fp);
     unsigned long a_shape[2] = {lda, bench_spec.k};
     unsigned long b_shape[2] = {ldb, bench_spec.n};
     unsigned long c_shape[2] = {bench_spec.m, bench_spec.n};
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".C.npy", false,
-                          2, c_shape, bench_data.C);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".A.npy", false,
-                          2, a_shape, bench_data.A);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".B.npy", false,
-                          2, b_shape, bench_data.B);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".C.npy", false, 2, c_shape,
+                          bench_data.C);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".A.npy", false, 2, a_shape,
+                          bench_data.A);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".B.npy", false, 2, b_shape,
+                          bench_data.B);
   }
 
   /* free resources */

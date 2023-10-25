@@ -417,30 +417,31 @@ void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
     std::tm tm = *std::localtime(&t);
     char time_str[64];
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
-    const char *result_path_and_prefix;
+    // We should store the string in a std::string because when the .c_str()
+    // pointer is referenced, the std::string object should not be destroyed
+    std::string result_path_and_prefix;
     if (problem_spec.flag_specify_result_path_and_prefix) {
       result_path_and_prefix = problem_spec.cli_result_path_and_prefix;
     } else {
       result_path_and_prefix =
-          (std::string("cusparse_bench_spmm_csr.") + time_str).c_str();
+          std::string("cusparse_bench_spmm_csr.") + time_str;
     }
     // Store m, n, k to a txt and store A, B, C to a numpy file
-    FILE *fp =
-        fopen((std::string(result_path_and_prefix) + ".txt").c_str(), "w");
+    FILE *fp = fopen((result_path_and_prefix + ".txt").c_str(), "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
             problem_spec.A_num_cols, problem_spec.B_num_cols,
             runtime_data.A_nnz, problem_spec.A_sparsity);
     fclose(fp);
-    cusp::io::write_matrix_market_file(
-        runtime_data.hA, std::string(result_path_and_prefix) + ".A.mtx");
+    cusp::io::write_matrix_market_file(runtime_data.hA,
+                                       result_path_and_prefix + ".A.mtx");
 
     unsigned long b_shape[2] = {runtime_data.ldb, problem_spec.B_num_cols};
     unsigned long c_shape[2] = {runtime_data.ldc, problem_spec.B_num_cols};
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".B.npy", false,
-                          2, b_shape, runtime_data.hB);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".C.npy", false,
-                          2, c_shape, hC);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".B.npy", false, 2, b_shape,
+                          runtime_data.hB);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".C.npy", false, 2, c_shape,
+                          hC);
     free(hC);
   }
   // device memory deallocation

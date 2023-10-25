@@ -310,28 +310,30 @@ void cleanup_bench_gemm(BenchGEMMProblemSpec &bench_spec,
     std::tm tm = *std::localtime(&t);
     char time_str[64];
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
-    const char *result_path_and_prefix;
+    // We should store the string in a std::string because when the .c_str()
+    // pointer is referenced, the std::string object should not be destroyed
+    std::string result_path_and_prefix;
     if (!bench_spec.flag_specify_result_path_and_prefix) {
       result_path_and_prefix =
-          (std::string("cublas_bench_gemm.") + time_str).c_str();
+          std::string("cublas_bench_gemm.") + time_str;
     } else {
       result_path_and_prefix = bench_spec.cli_result_path_and_prefix;
     }
     result_path_and_prefix = nullptr;
     // Store m, n, k to a txt and store A, B, C to a numpy file
     FILE *fp =
-        fopen((std::string(result_path_and_prefix) + ".txt").c_str(), "w");
+        fopen((result_path_and_prefix + ".txt").c_str(), "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d\n", bench_spec.m, bench_spec.n, bench_spec.k);
     fclose(fp);
     unsigned long a_shape[2] = {bench_data.lda, bench_spec.k};
     unsigned long b_shape[2] = {bench_data.ldb, bench_spec.n};
     unsigned long c_shape[2] = {bench_spec.m, bench_spec.n};
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".C.npy", false,
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".C.npy", false,
                           2, c_shape, bench_data.C);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".A.npy", false,
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".A.npy", false,
                           2, a_shape, bench_data.A);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".B.npy", false,
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".B.npy", false,
                           2, b_shape, bench_data.B);
   }
 

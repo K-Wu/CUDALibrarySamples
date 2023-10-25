@@ -162,7 +162,9 @@ void print_usage() {
       "--enable_debug_timing also records the elapsed time of the computation\n"
       "function; but it adds device synchronization and uses chrono to record\n"
       "the timing\n"
-      "--enable_preprocess enables the cusparse preprocessing, i.e., autotuning to find the optimized schedule for the given problem size and sparse pattern\n"
+      "--enable_preprocess enables the cusparse preprocessing, i.e., "
+      "autotuning to find the optimized schedule for the given problem size "
+      "and sparse pattern\n"
       "--enable_per_stream_timing prints the elapsed time on every stream of\n"
       "the computation function (not implemented yet)\n"
       "When there is single stream, --enable_timing has the same meaning as\n"
@@ -381,7 +383,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
     CHECK_CUDA(cudaEventRecord(data_copy_start, streams.front()));
   }
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
-  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * (1+1) * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * (1 + 1) * sizeof(float)))
 
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
   CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
@@ -592,7 +594,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
                                    timing_results);
 }
 
-void preprocess(ProblemSpec & problem_spec, RuntimeData & runtime_data){
+void preprocess(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
   for (int BB_col_idx = 0;
        BB_col_idx < problem_spec.B_num_cols / problem_spec.BB_num_cols;
        BB_col_idx++) {
@@ -631,7 +633,6 @@ void preprocess(ProblemSpec & problem_spec, RuntimeData & runtime_data){
       }
     }
   }
-
 }
 
 void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
@@ -758,15 +759,16 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   reduce_segments<BLOCK_SIZE, SHMEM_SIZE, float>
       <<<nblocks, nthreads, 0, runtime_data.streams.front()>>>(
           runtime_data.dC,
-          runtime_data.dC +
-             problem_spec.A_num_cols / problem_spec.AA_num_cols * problem_spec.AA_num_rows * problem_spec.BB_num_cols,
-          problem_spec.AA_num_rows, problem_spec.AA_num_rows, problem_spec.BB_num_cols, 
+          runtime_data.dC + problem_spec.A_num_cols / problem_spec.AA_num_cols *
+                                problem_spec.AA_num_rows *
+                                problem_spec.BB_num_cols,
+          problem_spec.AA_num_rows, problem_spec.AA_num_rows,
+          problem_spec.BB_num_cols,
           problem_spec.A_num_cols / problem_spec.AA_num_cols);
 
   if (problem_spec.enable_timing) {
     CHECK_CUDA(cudaEventRecord(stops_per_stream[0], runtime_data.streams[0]));
   }
-
 
   if (problem_spec.enable_timing)
     CHECK_CUDA(cudaEventRecord(stops_per_stream.front(),
@@ -933,31 +935,31 @@ void cleanup(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
     std::tm tm = *std::localtime(&t);
     char time_str[64];
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
-    const char *result_path_and_prefix;
+    // We should store the string in a std::string because when the .c_str()
+    // pointer is referenced, the std::string object should not be destroyed
+    std::string result_path_and_prefix;
     if (problem_spec.flag_specify_result_path_and_prefix) {
       result_path_and_prefix = problem_spec.cli_result_path_and_prefix;
     } else {
       result_path_and_prefix =
-          (std::string("cusparse_bench_spmm_csr_partitioned.") + time_str)
-              .c_str();
+          std::string("cusparse_bench_spmm_csr_partitioned.") + time_str;
     }
     // Store m, n, k to a txt and store A, B, C to a numpy file
-    FILE *fp =
-        fopen((std::string(result_path_and_prefix) + ".txt").c_str(), "w");
+    FILE *fp = fopen((result_path_and_prefix + ".txt").c_str(), "w");
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
             problem_spec.A_num_cols, problem_spec.B_num_cols,
             runtime_data.A_nnz, problem_spec.A_sparsity);
     fclose(fp);
-    cusp::io::write_matrix_market_file(
-        runtime_data.hA, std::string(result_path_and_prefix) + ".A.mtx");
+    cusp::io::write_matrix_market_file(runtime_data.hA,
+                                       result_path_and_prefix + ".A.mtx");
 
     unsigned long b_shape[2] = {runtime_data.ldb, problem_spec.B_num_cols};
     unsigned long c_shape[2] = {runtime_data.ldc, problem_spec.B_num_cols};
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".B.npy", false,
-                          2, b_shape, runtime_data.hB);
-    npy::SaveArrayAsNumpy(std::string(result_path_and_prefix) + ".C.npy", false,
-                          2, c_shape, hC);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".B.npy", false, 2, b_shape,
+                          runtime_data.hB);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".C.npy", false, 2, c_shape,
+                          hC);
     free(hC);
   }
 
@@ -1018,7 +1020,7 @@ int main(const int argc, const char **argv) {
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
 
-  if (bench_spec.enable_preprocess){
+  if (bench_spec.enable_preprocess) {
     preprocess(bench_spec, *(bench_data.get()));
   }
 

@@ -1,3 +1,6 @@
+*.ncu-rep
+*.nsys-rep
+*.sqlite
 *.log
 *.pyc
 __pycache__/
