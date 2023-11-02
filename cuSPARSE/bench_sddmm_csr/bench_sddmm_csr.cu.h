@@ -64,7 +64,7 @@
     if (status != cudaSuccess) {                                           \
       printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
              cudaGetErrorString(status), status);                          \
-      exit(EXIT_FAILURE);                                                 \
+      exit(EXIT_FAILURE);                                                  \
     }                                                                      \
   }
 
@@ -74,10 +74,10 @@
     if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
       printf("CUSPARSE API failed at line %d with error: %s (%d)\n", __LINE__, \
              cusparseGetErrorString(status), status);                          \
-      exit(EXIT_FAILURE);                                                     \
+      exit(EXIT_FAILURE);                                                      \
     }                                                                          \
   }
- 
+
 struct BenchSddmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
@@ -160,15 +160,16 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // float hC_values[]  = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   //                        0.0f, 0.0f, 0.0f, 0.0f };
   hA = (float *)malloc(sizeof(float) * A_size);
-  hB = (float *)malloc(sizeof(float) * B_size); 
+  hB = (float *)malloc(sizeof(float) * B_size);
   generate_random_matrix(hA, A_size);
   generate_random_matrix(hB, B_size);
   cusp::csr_matrix<int, float, cusp::host_memory> hC =
       generate_random_sparse_matrix_nodup<
           cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
                                                            B_num_cols, C_nnz);
-  //printf(
-  //  "actual C_nnz due to deduplication during random data generation: %d\n", C_nnz);
+  // printf(
+  //   "actual C_nnz due to deduplication during random data generation: %d\n",
+  //   C_nnz);
   cusp::csr_matrix<int, float, cusp::device_memory> dC(hC);
 
   //--------------------------------------------------------------------------
@@ -195,8 +196,8 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // CHECK_CUDA( cudaMemcpy(dC_values, hC_values, C_nnz * sizeof(float),
   //                        cudaMemcpyHostToDevice) )
   //--------------------------------------------------------------------------
-  //201 - 220: Uncertain whether all variable names are correct (Lawrence)
-BenchSddmmCSRProblemSpec problem_spec{
+  // 201 - 220: Uncertain whether all variable names are correct (Lawrence)
+  BenchSddmmCSRProblemSpec problem_spec{
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
@@ -252,7 +253,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
       runtime_data.ldb, runtime_data.dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
   // Create sparse matrix C in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
-      //original &matC, A_num_rows, B_num_cols, C_nnz,
+      // original &matC, A_num_rows, B_num_cols, C_nnz,
       &(runtime_data.matC), problem_spec.A_num_rows, problem_spec.B_num_cols,
       runtime_data.C_nnz,
       // dC_offsets, dC_columns, dC_values,
@@ -291,12 +292,12 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   beg = std::chrono::system_clock::now();
   CHECK_CUDA(cudaEventRecord(start));
-  CHECK_CUSPARSE(    
+  CHECK_CUSPARSE(
       cusparseSDDMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-                   CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
-                   runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-                   runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
-                   runtime_data.dBuffer))
+                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
+                    runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
+                    runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
+                    runtime_data.dBuffer))
   CHECK_CUDA(cudaEventRecord(stop));
   CHECK_CUDA(cudaDeviceSynchronize());
   end = std::chrono::system_clock::now();
@@ -305,18 +306,19 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   printf("cusparseSDDMM+CSR elapsed time (ms): %f\n", elapsed_time);
   printf("cusparseSDDMM+CSR throughput (GFLOPS): %f\n",
-         (2.0 * problem_spec.A_num_rows * problem_spec.B_num_cols * problem_spec.A_num_cols) /
+         (2.0 * problem_spec.A_num_rows * problem_spec.B_num_cols *
+          problem_spec.A_num_cols) /
              (elapsed_time / 1000.0) / 1e9);
   printf(
       "[DEBUG] cusparseSDDMM chrono time (microseconds): %ld\n",
       std::chrono::duration_cast<std::chrono::microseconds>(end - beg).count());
 }
-        
-  // destroy matrix/vector descriptors
-  void cleanup(BenchSddmmCSRProblemSpec problem_spec,
+
+// destroy matrix/vector descriptors
+void cleanUp(BenchSddmmCSRProblemSpec problem_spec,
              BenchSddmmSRRuntimeData runtime_data) {
   // Destroy matrix/vector descriptors
-  // matA & matB dense, matC sparse 
+  // matA & matB dense, matC sparse
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
   CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matC))
@@ -360,5 +362,5 @@ int main_bench_sddmm_csr(const int argc, const char **argv) {
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
   compute(bench_spec, bench_data);
-  cleanup(bench_spec, bench_data);
+  cleanUp(bench_spec, bench_data);
 }

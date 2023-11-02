@@ -604,7 +604,7 @@ void preprocess(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
       for (int AA_row_idx = 0;
            AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
            AA_row_idx++) {
-        auto [idx_spmm, num_spmms] = get_canonical_loop_index_and_bound(
+        auto [idx_spmm, num_spmms] = canonicalize_loop_index_and_bound(
             {BB_col_idx, AA_col_idx, AA_row_idx},
             {problem_spec.B_num_cols / problem_spec.BB_num_cols,
              problem_spec.A_num_cols / problem_spec.AA_num_cols,
@@ -709,7 +709,7 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
       for (int AA_row_idx = 0;
            AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
            AA_row_idx++) {
-        auto [idx_spmm, num_spmms] = get_canonical_loop_index_and_bound(
+        auto [idx_spmm, num_spmms] = canonicalize_loop_index_and_bound(
             {BB_col_idx, AA_col_idx, AA_row_idx},
             {problem_spec.B_num_cols / problem_spec.BB_num_cols,
              problem_spec.A_num_cols / problem_spec.AA_num_cols,
@@ -886,7 +886,7 @@ void consume_and_print_timing(ProblemSpec &problem_spec,
   }
 }
 
-void cleanup(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
+void cleanUp(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
   // Destroy matrix/vector descriptors
   int idx_spmm = 0;
   for (int BB_col_idx = 0;
@@ -1071,7 +1071,7 @@ int main(const int argc, const char **argv) {
     CHECK_CUDA(cudaGraphExecDestroy(bench_data.get()->graphExecs[0]));
     CHECK_CUDA(cudaGraphDestroy(bench_data.get()->graphs[0]));
   }
-  cleanup(bench_spec, *(bench_data.get()));
+  cleanUp(bench_spec, *(bench_data.get()));
   return 0;
 }
 };  // namespace BenchSpMMCSRPartitioned
