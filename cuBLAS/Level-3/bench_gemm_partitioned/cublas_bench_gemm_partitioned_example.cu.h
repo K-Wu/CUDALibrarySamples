@@ -968,6 +968,13 @@ int main(const int argc, const char **argv) {
   if (bench_spec.enable_timing && !bench_spec.enable_graph) {
     consume_and_print_timing(bench_spec, timing_results);
   }
+
+  // Still needs to destroy graphExec though graph will be destroyed by
+  // cudaGraphWrapper destructor
+  if (bench_spec.enable_graph) {
+    CUDA_CHECK(cudaGraphExecDestroy(bench_data.graphExecs[0]));
+  }
+
   cleanUp(bench_spec, bench_data);
   return 0;
 }

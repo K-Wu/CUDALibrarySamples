@@ -66,6 +66,7 @@
 #include <string>
 #include <tuple>
 
+#include "helper_CUDAGraphConstructor.cu.h"
 #include "helper_cusp.cu.h"
 #include "helper_kernels.cu.h"
 #include "helper_loops.cu.h"
@@ -635,8 +636,11 @@ void preprocess(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
   }
 }
 
-void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
-             TimingResults &timing_results) {
+// This function is written before GraphConstructor is implemented. It is no
+// longer updated but stay here to 1) provide a reference implementation to
+// facilitate debugging.
+void _compute_reference(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+                        TimingResults &timing_results) {
   // Execute SpMM
   // We nest the cuda event timing with std::chrono to make sure the cuda
   // event is getting correct results, we will use the cuda event timing
@@ -827,6 +831,235 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   return;
 }
 
+void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
+             TimingResults &timing_results,
+             AbstractCUDAGraphConstructor<cudaStream_t> &graph_constructor) {
+  // Execute SpMM
+  // We nest the cuda event timing with std::chrono to make sure the cuda
+  // event is getting correct results, we will use the cuda event timing
+  // results and ignore the std::chrono results
+  std::chrono::time_point<std::chrono::system_clock> beg, end;
+  // Start and stop when
+  // wait_streams_on_first_and_report_that_as_elapsed_time
+
+  printf("dAA[0].values %p\n", runtime_data.dAA[0].values.data());
+
+  cudaEvent_t start, stop;
+  std::vector<cudaEvent_t> starts_per_stream, stops_per_stream;
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&stop));
+  }
+  // We need stop event per stream to synchronize before reduction no matter
+  // timing is enabled or not
+  for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+    cudaEvent_t stop_per_stream;
+    CHECK_CUDA(cudaEventCreate(&stop_per_stream));
+    stops_per_stream.push_back(stop_per_stream);
+  }
+
+  if (problem_spec.enable_timing) {
+    // We need stop event per stream to synchronize before reduction no matter
+    // timing is enabled or not
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      cudaEvent_t start_per_stream;
+      CHECK_CUDA(cudaEventCreate(&start_per_stream));
+      starts_per_stream.push_back(start_per_stream);
+    }
+  }
+
+  if (problem_spec.enable_debug_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++)
+      CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[idx]));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    beg = std::chrono::system_clock::now();
+  }
+
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    // Equivalent to error-checked cudaEventRecord
+    graph_constructor.addEventRecordNode(start, runtime_data.streams.front());
+  }
+
+  if (problem_spec.enable_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+              problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+              problem_spec.nstreams)) {
+        // Equivalent to error-checked cudaStreamWaitEvent
+        graph_constructor.addStreamWaitEventNode(runtime_data.streams[idx],
+                                                 start);
+      }
+
+      // Equivalent to error-checked cudaEventRecord
+      graph_constructor.addEventRecordNode(starts_per_stream[idx],
+                                           runtime_data.streams[idx]);
+    }
+  }
+
+  graph_constructor.notifyBeforeInvokingLibraryCall(runtime_data.streams[0]);
+  // TODO: skip if the sparse matrix size is 0
+  for (int BB_col_idx = 0;
+       BB_col_idx < problem_spec.B_num_cols / problem_spec.BB_num_cols;
+       BB_col_idx++) {
+    for (int AA_col_idx = 0;
+         AA_col_idx < problem_spec.A_num_cols / problem_spec.AA_num_cols;
+         AA_col_idx++) {
+      for (int AA_row_idx = 0;
+           AA_row_idx < problem_spec.A_num_rows / problem_spec.AA_num_rows;
+           AA_row_idx++) {
+        auto [idx_spmm, num_spmms] = canonicalize_loop_index_and_bound(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows});
+        int curr_stream_idx =
+            getCurrStream({BB_col_idx, AA_col_idx, AA_row_idx},
+                          {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                           problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                           problem_spec.A_num_rows / problem_spec.AA_num_rows},
+                          problem_spec.nstreams);
+        std::vector<int> last_loop_idxes = get_last_loop_index(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows});
+        int last_stream_idx =
+            getCurrStream(last_loop_idxes,
+                          {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                           problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                           problem_spec.A_num_rows / problem_spec.AA_num_rows},
+                          runtime_data.streams.size());
+        if (BB_col_idx + AA_col_idx + AA_row_idx != 0 &&
+            curr_stream_idx != last_stream_idx) {
+          graph_constructor.notifyAfterInvokingLibraryCall(
+              runtime_data.streams[last_stream_idx]);
+          graph_constructor.notifyBeforeInvokingLibraryCall(
+              runtime_data.streams[curr_stream_idx]);
+        }
+        int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
+                                      problem_spec.AA_num_rows;
+        int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
+                                      problem_spec.AA_num_cols;
+        int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
+                                      problem_spec.AA_num_rows;
+
+        CHECK_CUSPARSE(cusparseSpMM(
+            runtime_data.handles[curr_stream_idx],
+            CUSPARSE_OPERATION_NON_TRANSPOSE, CUSPARSE_OPERATION_NON_TRANSPOSE,
+            &(runtime_data.alpha), runtime_data.matAA[idx_AA],
+            runtime_data.matBB[idx_BB], &(runtime_data.beta),
+            runtime_data.matCC[idx_CC], CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
+            runtime_data.dBuffers[idx_spmm]))
+
+        // idx_spmm++;
+      }
+    }
+  }
+  graph_constructor.notifyAfterInvokingLibraryCall(
+      runtime_data.streams[problem_spec.nstreams - 1]);
+
+  // Stream idx 0 waits for all other streams to finish before executing the
+  // reduction kernel
+  for (int idx = 1; idx < problem_spec.nstreams; idx++) {
+    // Equivalent to error-checked cudaEventRecord
+    graph_constructor.addEventRecordNode(stops_per_stream[idx],
+                                         runtime_data.streams[idx]);
+    // Equivalent to error-checked cudaStreamWaitEvent
+    graph_constructor.addStreamWaitEventNode(runtime_data.streams[0],
+                                             stops_per_stream[idx]);
+  }
+
+  graph_constructor.notifyBeforeInvokingLibraryCall(runtime_data.streams[0]);
+  // Accumulate the result
+  // TODO: define BLOCK_SIZE and SHMEM_SIZE
+  constexpr int BLOCK_SIZE = 256;
+  constexpr int SHMEM_SIZE = 256;
+  assert(problem_spec.A_num_rows * problem_spec.B_num_cols % SHMEM_SIZE == 0);
+  dim3 nblocks(problem_spec.A_num_rows * problem_spec.B_num_cols / SHMEM_SIZE,
+               problem_spec.A_num_cols / problem_spec.AA_num_cols, 1);
+  dim3 nthreads(BLOCK_SIZE, 1, 1);
+  reduce_segments<BLOCK_SIZE, SHMEM_SIZE, float>
+      <<<nblocks, nthreads, 0, runtime_data.streams.front()>>>(
+          runtime_data.dC,
+          runtime_data.dC + problem_spec.A_num_cols / problem_spec.AA_num_cols *
+                                problem_spec.AA_num_rows *
+                                problem_spec.BB_num_cols,
+          problem_spec.AA_num_rows, problem_spec.AA_num_rows,
+          problem_spec.BB_num_cols,
+          problem_spec.A_num_cols / problem_spec.AA_num_cols);
+  graph_constructor.notifyAfterInvokingLibraryCall(runtime_data.streams[0]);
+
+  if (problem_spec.enable_timing) {
+    // Equivalent to error-checked cudaEventRecord
+    graph_constructor.addEventRecordNode(stops_per_stream[0],
+                                         runtime_data.streams[0]);
+  }
+
+  if (problem_spec.enable_timing) {
+    // Equivalent to error-checked cudaEventRecord
+    graph_constructor.addEventRecordNode(stops_per_stream.front(),
+                                         runtime_data.streams.front());
+  }
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+      if (wait_streams_on_first_and_report_that_as_elapsed_time(
+              problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+              problem_spec.nstreams)) {
+        // Equivalent to error-checked cudaStreamWaitEvent
+        graph_constructor.addStreamWaitEventNode(runtime_data.streams[0],
+                                                 stops_per_stream[idx]);
+      }
+      // Equivalent to error-checked cudaEventRecord
+      graph_constructor.addEventRecordNode(stop, runtime_data.streams[0]);
+    }
+  }
+
+  if (problem_spec.enable_debug_timing) {
+    for (int idx = 0; idx < problem_spec.nstreams; idx++)
+      CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[idx]));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    end = std::chrono::system_clock::now();
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned chrono time (microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(end - beg)
+            .count());
+  }
+
+  // Add start, stop pair in each stream to the return value
+  if (report_elapsed_time_per_stream(problem_spec.enable_per_stream_timing,
+                                     problem_spec.enable_timing,
+                                     problem_spec.nstreams)) {
+    timing_results.start_events = starts_per_stream;
+    timing_results.stop_events = stops_per_stream;
+    return;
+  }
+
+  // Synchronize on the first stream in streams vector, and add the start, stop
+  // pair to the return value
+  if (wait_streams_on_first_and_report_that_as_elapsed_time(
+          problem_spec.enable_per_stream_timing, problem_spec.enable_timing,
+          problem_spec.nstreams)) {
+    timing_results.start_events = std::vector<cudaEvent_t>({start});
+    timing_results.stop_events = std::vector<cudaEvent_t>({stop});
+    return;
+  }
+
+  // No timing should be reported
+  for (int idx = 0; idx < problem_spec.nstreams; idx++) {
+    CHECK_CUDA(cudaEventDestroy(stops_per_stream[idx]));
+  }
+  timing_results.start_events = std::vector<cudaEvent_t>();
+  timing_results.stop_events = std::vector<cudaEvent_t>();
+  return;
+}
+
 void consume_and_print_timing(ProblemSpec &problem_spec,
                               RuntimeData &runtime_data,
                               TimingResults &timing_results) {
@@ -974,16 +1207,20 @@ void cleanUp(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
   return;
 }
 
+// This function is written before GraphConstructor is implemented. It is no
+// longer updated but stay here to 1) provide a reference implementation to
+// facilitate debugging.
 // When cuda graph is enabled, the original compute stage is now creating
 // the graph, and we need a new stage that launches the graph. The rest should
 // be kept the same.
-void create_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
-                  TimingResults &timing_results) {
+void _create_graph_reference(ProblemSpec &problem_spec,
+                             RuntimeData &runtime_data,
+                             TimingResults &timing_results) {
   std::vector<cudaGraph_t> graphs;
   CHECK_CUDA(cudaStreamBeginCapture(runtime_data.streams[0],
                                     cudaStreamCaptureModeGlobal));
 
-  compute(problem_spec, runtime_data, timing_results);
+  _compute_reference(problem_spec, runtime_data, timing_results);
 
   // Only stream idx 0 needs to be captured because other stream waits on the
   // start event of stream idx 0, and stream idx 0 waits on the stop event of
@@ -995,6 +1232,21 @@ void create_graph(ProblemSpec &problem_spec, RuntimeData &runtime_data,
   runtime_data.graphs = graphs;
 
   return;
+}
+
+CUDAGraphConstructor<cudaStream_t> create_graph(ProblemSpec &problem_spec,
+                                                RuntimeData &runtime_data,
+                                                TimingResults &timing_results) {
+  CUDAGraphConstructor<cudaStream_t> graph_constructor;
+  for (cudaStream_t stream : runtime_data.streams) {
+    graph_constructor.registerStream(stream);
+  }
+
+  compute(problem_spec, runtime_data, timing_results, graph_constructor);
+
+  runtime_data.graphs.push_back(graph_constructor.getGraph());
+
+  return graph_constructor;
 }
 
 void initiate_graph(RuntimeData &runtime_data) {
@@ -1014,7 +1266,10 @@ void launch_graph_and_wait(RuntimeData &runtime_data) {
   CHECK_CUDA(cudaStreamSynchronize(runtime_data.streams[0]));
 }
 
-int main(const int argc, const char **argv) {
+// This function is written before GraphConstructor is implemented. It is no
+// longer updated but stay here to 1) provide a reference implementation to
+// facilitate debugging.
+int _main_reference(const int argc, const char **argv) {
   TimingResults timing_results;
   auto bench_tuple = generate_data_and_prepare(argc, argv, timing_results);
   auto bench_spec = std::get<0>(bench_tuple);
@@ -1028,7 +1283,7 @@ int main(const int argc, const char **argv) {
     std::chrono::time_point<std::chrono::system_clock> graph_creation_beg,
         graph_creation_end, graph_initialization_end, graph_execution_end;
     graph_creation_beg = std::chrono::system_clock::now();
-    create_graph(bench_spec, *(bench_data.get()), timing_results);
+    _create_graph_reference(bench_spec, *(bench_data.get()), timing_results);
 
     graph_creation_end = std::chrono::system_clock::now();
     initiate_graph(*(bench_data.get()));
@@ -1058,7 +1313,7 @@ int main(const int argc, const char **argv) {
             graph_execution_end - graph_initialization_end)
             .count());
   } else {
-    compute(bench_spec, *(bench_data.get()), timing_results);
+    _compute_reference(bench_spec, *(bench_data.get()), timing_results);
   }
   // When CUDA graph is enabled, we already wait until it finishes. Both
   // synchronize event inside the graph or measuring the elapsed time between
@@ -1070,6 +1325,71 @@ int main(const int argc, const char **argv) {
   if (bench_spec.enable_graph) {
     CHECK_CUDA(cudaGraphExecDestroy(bench_data.get()->graphExecs[0]));
     CHECK_CUDA(cudaGraphDestroy(bench_data.get()->graphs[0]));
+  }
+  cleanUp(bench_spec, *(bench_data.get()));
+  return 0;
+}
+
+int main(const int argc, const char **argv) {
+  TimingResults timing_results;
+  auto bench_tuple = generate_data_and_prepare(argc, argv, timing_results);
+  auto bench_spec = std::get<0>(bench_tuple);
+  auto bench_data = std::get<1>(bench_tuple);
+
+  if (bench_spec.enable_preprocess) {
+    preprocess(bench_spec, *(bench_data.get()));
+  }
+
+  if (bench_spec.enable_graph) {
+    std::chrono::time_point<std::chrono::system_clock> graph_creation_beg,
+        graph_creation_end, graph_initialization_end, graph_execution_end;
+    graph_creation_beg = std::chrono::system_clock::now();
+
+    auto graph_constructor =
+        create_graph(bench_spec, *(bench_data.get()), timing_results);
+
+    graph_creation_end = std::chrono::system_clock::now();
+    initiate_graph(*(bench_data.get()));
+
+    graph_initialization_end = std::chrono::system_clock::now();
+    launch_graph_and_wait(*(bench_data.get()));
+    graph_execution_end = std::chrono::system_clock::now();
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph creation chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_creation_end - graph_creation_beg)
+            .count());
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph initialization chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_initialization_end - graph_creation_end)
+            .count());
+    printf(
+        "[DEBUG] cusparseSpMM+CSR+Partitioned graph execution chrono time "
+        "(microseconds): "
+        "%ld\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            graph_execution_end - graph_initialization_end)
+            .count());
+  } else {
+    _compute_reference(bench_spec, *(bench_data.get()), timing_results);
+  }
+  // When CUDA graph is enabled, we already wait until it finishes. Both
+  // synchronize event inside the graph or measuring the elapsed time between
+  // two events will trigger an error
+  if ((bench_spec.enable_timing || bench_spec.test_API_on_stream) &&
+      !bench_spec.enable_graph) {
+    consume_and_print_timing(bench_spec, *(bench_data.get()), timing_results);
+  }
+
+  // Still needs to destroy graphExec though graph will be destroyed by
+  // cudaGraphWrapper destructor
+  if (bench_spec.enable_graph) {
+    CHECK_CUDA(cudaGraphExecDestroy(bench_data.get()->graphExecs[0]));
   }
   cleanUp(bench_spec, *(bench_data.get()));
   return 0;
