@@ -49,6 +49,7 @@
 #pragma once
 #include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
 #include <cusp/csr_matrix.h>
+#include <cusp/io/matrix_market.h>
 #include <cusparse.h>  // cusparseSpMM
 #include <stdio.h>     // printf
 #include <stdlib.h>    // EXIT_FAILURE
@@ -57,6 +58,8 @@
 
 #include <chrono>
 #include <tuple>
+
+#include "npy.hpp"
 
 #define CHECK_CUDA(func)                                                   \
   {                                                                        \
@@ -84,6 +87,8 @@ struct BenchSddmmCSRProblemSpec {
   int B_num_cols;
   float C_sparsity;
   bool enable_dump;
+  bool enable_timing;
+  bool enable_preprocess;
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix;
 };
@@ -98,14 +103,14 @@ struct BenchSddmmCSRRuntimeData {
   float alpha;
   float beta;
   float *hA, *hB;
-  float *dB, *dA;
+  float *dA, *dB;
   cusparseHandle_t handle;
   cusparseDnMatDescr_t matA, matB;
   cusparseSpMatDescr_t matC;
   void *dBuffer;
   size_t bufferSize;
-  cusp::csr_matrix<int, float, cusp::host_memory> hA;
-  cusp::csr_matrix<int, float, cusp::device_memory> dA;
+  cusp::csr_matrix<int, float, cusp::host_memory> hC;
+  cusp::csr_matrix<int, float, cusp::device_memory> dC;
 };
 
 std::tuple<BenchSddmmCSRProblemSpec, BenchSddmmCSRRuntimeData>
@@ -116,6 +121,11 @@ generate_data_and_prepare(const int argc, const char **argv) {
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
   float C_sparsity = getCmdLineArgumentFloat(argc, argv, "C_sparsity");
   bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
+  bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
+  bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
+  char *cli_result_path_and_prefix;
+  bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
+      argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       C_sparsity == 0) {
     printf(
@@ -139,11 +149,8 @@ generate_data_and_prepare(const int argc, const char **argv) {
   float alpha = 1.0f;
   float beta = 0.0f;
   float *hA, *hB;
-  float *dB, *dA;
+  float *dA, *dB;
   cusparseHandle_t handle = NULL;
-  cusparseDnMatDescr_t matA, matB;
-  cusparseSpMatDescr_t matC;
-  void *dBuffer = NULL;
   size_t bufferSize = 0;
 
   // initializing (instantiating??) data
@@ -178,7 +185,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
   // Device memory management
   // int   *dC_offsets, *dC_columns;
   // float *dC_values,
-  float *dB, *dA;
+
   CHECK_CUDA(cudaMalloc((void **)&dA, A_size * sizeof(float)))
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
   // CHECK_CUDA( cudaMalloc((void**) &dC_offsets,
@@ -203,6 +210,8 @@ generate_data_and_prepare(const int argc, const char **argv) {
       .B_num_cols = B_num_cols,
       .C_sparsity = C_sparsity,
       .enable_dump = enable_dump,
+      .enable_timing = enable_timing,
+      .enable_preprocess = enable_preprocess,
       .cli_result_path_and_prefix = cli_result_path_and_prefix,
       .flag_specify_result_path_and_prefix =
           flag_specify_result_path_and_prefix,
@@ -217,18 +226,42 @@ generate_data_and_prepare(const int argc, const char **argv) {
       .B_size = B_size,
       .alpha = alpha,
       .beta = beta,
-      .hB = hB,
-      .dB = dB,
-      .dC = dC,
-      .handle = handle,
-      .matA = matA,
-      .matB = matB,
-      .matC = matC,
-      .dBuffer = dBuffer,
-      .bufferSize = bufferSize,
       .hA = hA,
+      .hB = hB,
       .dA = dA,
+      .dB = dB,
+      .handle = handle,
+      .bufferSize = bufferSize,
+      .hC = hC,
+      .dC = dC,
   };
+
+  // Create dense matrix A
+  CHECK_CUSPARSE(cusparseCreateDnMat(
+      &(runtime_data.matA), problem_spec.A_num_cols, problem_spec.B_num_cols,
+      runtime_data.lda, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
+  // Create dense matrix B
+  CHECK_CUSPARSE(cusparseCreateDnMat(
+      &(runtime_data.matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
+      runtime_data.ldb, runtime_data.dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
+  // Create sparse matrix C in CSR format
+  CHECK_CUSPARSE(cusparseCreateCsr(
+      // original &matC, A_num_rows, B_num_cols, C_nnz,
+      &(runtime_data.matC), problem_spec.A_num_rows, problem_spec.B_num_cols,
+      runtime_data.C_nnz,
+      // dC_offsets, dC_columns, dC_values,
+      (void *)thrust::raw_pointer_cast(runtime_data.dC.row_offsets.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data.dC.column_indices.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data.dC.values.data()),
+      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
+      CUDA_R_32F))
+  // allocate an external buffer if needed
+  CHECK_CUSPARSE(cusparseSDDMM_bufferSize(
+      runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+      CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
+      runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
+      runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
+      &(runtime_data.bufferSize)))
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
@@ -246,7 +279,7 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   // Create dense matrix A
   CHECK_CUSPARSE(cusparseCreateDnMat(
       &(runtime_data.matA), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.ldA, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
+      runtime_data.lda, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
   // Create dense matrix B
   CHECK_CUSPARSE(cusparseCreateDnMat(
       &(runtime_data.matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
@@ -274,11 +307,12 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
   // TODO: add option to control if preprocess is enabled
   // execute preprocess (optional)
-  if (enable_preprocess) {
+  if (problem_spec.enable_preprocess) {
     CHECK_CUSPARSE(cusparseSDDMM_preprocess(
         handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-        CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
-        CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT, dBuffer))
+        CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha), matA, matB,
+        &(runtime_data.beta), matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
+        dBuffer))
   }
   // Execute SpMM
   // We nest the cuda event timing with std::chrono to make sure the cuda event
@@ -316,13 +350,49 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 
 // destroy matrix/vector descriptors
 void cleanUp(BenchSddmmCSRProblemSpec problem_spec,
-             BenchSddmmSRRuntimeData runtime_data) {
+             BenchSddmmCSRRuntimeData runtime_data) {
   // Destroy matrix/vector descriptors
   // matA & matB dense, matC sparse
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matA))
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matB))
   CHECK_CUSPARSE(cusparseDestroySpMat(runtime_data.matC))
   CHECK_CUSPARSE(cusparseDestroy(runtime_data.handle))
+
+  if (problem_spec.enable_dump) {
+    // Get current timestamp
+    std::time_t t = std::time(nullptr);
+    std::tm tm = *std::localtime(&t);
+    char time_str[64];
+    std::strftime(time_str, sizeof(time_str), "%Y-%m-%d-%H-%M", &tm);
+    // We should store the string in a std::string because when the .c_str()
+    // pointer is referenced, the std::string object should not be destroyed
+    std::string result_path_and_prefix;
+    if (problem_spec.flag_specify_result_path_and_prefix) {
+      result_path_and_prefix = problem_spec.cli_result_path_and_prefix;
+    } else {
+      result_path_and_prefix =
+          std::string("cusparse_bench_sddmm_csr.") + time_str;
+    }
+    // Store m, n, k to a txt and store A, B, C to a numpy file
+    FILE *fp = fopen((result_path_and_prefix + ".txt").c_str(), "w");
+    assert(fp != nullptr);
+    fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
+            problem_spec.A_num_cols, problem_spec.B_num_cols,
+            runtime_data.C_nnz, problem_spec.C_sparsity);
+    fclose(fp);
+
+    cusp::csr_matrix<int, float, cusp::host_memory> result_hC(runtime_data.dC);
+
+    cusp::io::write_matrix_market_file(result_hC,
+                                       result_path_and_prefix + ".C.mtx");
+
+    unsigned long a_shape[2] = {runtime_data.lda, problem_spec.A_num_cols};
+    unsigned long b_shape[2] = {runtime_data.ldb, problem_spec.B_num_cols};
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".A.npy", false, 2, a_shape,
+                          runtime_data.hB);
+    npy::SaveArrayAsNumpy(result_path_and_prefix + ".B.npy", false, 2, b_shape,
+                          runtime_data.hA);
+  }
 
   //--------------------------------------------------------------------------
   // device result check
@@ -357,10 +427,15 @@ void cleanUp(BenchSddmmCSRProblemSpec problem_spec,
   // CHECK_CUDA( cudaFree(dC_values) )
 }
 
+// TODO: impl logic for enable_timing
 int main_bench_sddmm_csr(const int argc, const char **argv) {
   auto bench_tuple = generate_data_and_prepare(argc, argv);
   auto bench_spec = std::get<0>(bench_tuple);
   auto bench_data = std::get<1>(bench_tuple);
+
+  if (bench_spec.enable_timing) {
+    printf("WARNING: timing is not implemented yet\n");
+  }
   compute(bench_spec, bench_data);
   cleanUp(bench_spec, bench_data);
 }

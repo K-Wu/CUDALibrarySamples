@@ -45,7 +45,7 @@
 # comments to the code, the above Disclaimer and U.S. Government End
 # Users Notice.
 CUDA_TOOLKIT := $(shell dirname $$(command -v nvcc))/..
-INC          := -I$(CUDA_TOOLKIT)/include -I../../3rdparty/cusplibrary -I../../3rdparty/
+INC          := -I$(CUDA_TOOLKIT)/include -I../../3rdparty/cusplibrary -I../../3rdparty/libnpy/include -I../../3rdparty/
 LIBS         := -lcudart -lcusparse
 
 all: bench_sddmm_csr
