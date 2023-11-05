@@ -142,10 +142,10 @@ generate_data_and_prepare(const int argc, const char **argv) {
   int B_num_rows = A_num_cols;
   // int   C_nnz        = 9;
   int C_nnz = A_num_rows * B_num_cols * C_sparsity;
-  int lda = A_num_cols;
-  int ldb = B_num_cols;
-  int A_size = lda * A_num_rows;
-  int B_size = ldb * B_num_rows;
+  int lda = A_num_rows;
+  int ldb = A_num_cols;
+  int A_size = lda * A_num_cols;
+  int B_size = ldb * B_num_cols;
   float alpha = 1.0f;
   float beta = 0.0f;
   float *hA, *hB;
@@ -238,7 +238,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
 
   // Create dense matrix A
   CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matA), problem_spec.A_num_cols, problem_spec.B_num_cols,
+      &(runtime_data.matA), problem_spec.A_num_rows, problem_spec.A_num_cols,
       runtime_data.lda, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
   // Create dense matrix B
   CHECK_CUSPARSE(cusparseCreateDnMat(
@@ -262,6 +262,8 @@ generate_data_and_prepare(const int argc, const char **argv) {
       runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
       runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
       &(runtime_data.bufferSize)))
+  CHECK_CUDA(
+      cudaMalloc((void **)&(runtime_data.dBuffer), runtime_data.bufferSize))
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
@@ -276,34 +278,6 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
   void *dBuffer = NULL;
   size_t bufferSize = 0;
   CHECK_CUSPARSE(cusparseCreate(&handle))
-  // Create dense matrix A
-  CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matA), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.lda, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
-  // Create dense matrix B
-  CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.ldb, runtime_data.dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
-  // Create sparse matrix C in CSR format
-  CHECK_CUSPARSE(cusparseCreateCsr(
-      // original &matC, A_num_rows, B_num_cols, C_nnz,
-      &(runtime_data.matC), problem_spec.A_num_rows, problem_spec.B_num_cols,
-      runtime_data.C_nnz,
-      // dC_offsets, dC_columns, dC_values,
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.row_offsets.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.column_indices.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.values.data()),
-      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
-      CUDA_R_32F))
-
-  // allocate an external buffer if needed
-  CHECK_CUSPARSE(cusparseSDDMM_bufferSize(
-      runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-      CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
-      runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-      runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
-      &(runtime_data.bufferSize)))
-  CHECK_CUDA(cudaMalloc(&(runtime_data.dBuffer), runtime_data.bufferSize))
 
   // TODO: add option to control if preprocess is enabled
   // execute preprocess (optional)

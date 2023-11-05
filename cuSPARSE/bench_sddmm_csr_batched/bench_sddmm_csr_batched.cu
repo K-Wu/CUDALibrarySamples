@@ -108,10 +108,10 @@ int main(const int argc, const char **argv) {
   // ***** END OF HOST PROBLEM DEFINITION *****
 
   int B_num_rows = A_num_cols;
-  int lda = A_num_cols;
-  int ldb = B_num_cols;
-  int A_size = lda * A_num_rows;
-  int B_size = ldb * B_num_rows;
+  int lda = A_num_rows;
+  int ldb = A_num_cols;
+  int A_size = lda * A_num_cols;
+  int B_size = ldb * B_num_cols;
   int C_nnz = (int)(C_sparsity * A_num_rows * B_num_cols);
 
   //   float hA1[] = {1.0f, 2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,
