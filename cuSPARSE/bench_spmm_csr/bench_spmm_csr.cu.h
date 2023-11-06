@@ -350,7 +350,7 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
         CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
         runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
         runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
-        &(runtime_data.dBuffer)));
+        runtime_data.dBuffer));
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
