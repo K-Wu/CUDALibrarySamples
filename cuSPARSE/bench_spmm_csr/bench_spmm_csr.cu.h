@@ -173,6 +173,8 @@ generate_data_and_prepare_bench_spmm_csr(
   // void *dBuffer = NULL;
   // size_t bufferSize = 0;
   cudaStream_t stream;
+  std::shared_ptr<BenchSpmmCSRRuntimeData> runtime_data =
+      std::make_shared<BenchSpmmCSRRuntimeData>();
 
   // instantiating data
   hB = (float *)malloc(sizeof(float) * B_size);
@@ -219,7 +221,7 @@ generate_data_and_prepare_bench_spmm_csr(
   CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
 
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
-  CHECK_CUDA(cudaMemset(dB, 0, B_size * sizeof(float)))
+  CHECK_CUDA(cudaMemset(dC, 0, C_size * sizeof(float)))
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(data_copy_stop, stream));
     utility_timestamps["data_copy"] =
@@ -234,26 +236,26 @@ generate_data_and_prepare_bench_spmm_csr(
   // cusparseSpMatDescr_t matA;
   // cusparseDnMatDescr_t matB, matC;
 
-  BenchSpmmCSRRuntimeData runtime_data{.A_nnz = A_nnz,
-                                       .B_num_rows = B_num_rows,
-                                       .ldb = ldb,
-                                       .ldc = ldc,
-                                       .B_size = B_size,
-                                       .C_size = C_size,
-                                       .alpha = alpha,
-                                       .beta = beta,
-                                       .hB = hB,
-                                       .dB = dB,
-                                       .dC = dC,
-                                       .handle = handle,
-                                       //  .matA not set
-                                       //  .matB not set
-                                       //  .matC not set
-                                       //  .dBuffer not set
-                                       //  .bufferSize not set
-                                       .hA = hA,
-                                       .dA = dA,
-                                       .stream = stream};
+  runtime_data->A_nnz = A_nnz;
+  runtime_data->B_num_rows = B_num_rows;
+  runtime_data->ldb = ldb;
+  runtime_data->ldc = ldc;
+  runtime_data->B_size = B_size;
+  runtime_data->C_size = C_size;
+  runtime_data->alpha = alpha;
+  runtime_data->beta = beta;
+  runtime_data->hB = hB;
+  runtime_data->dB = dB;
+  runtime_data->dC = dC;
+  runtime_data->handle = handle;
+  //  .matA not set
+  //  .matB not set
+  //  .matC not set
+  //  .dBuffer not set
+  //  .bufferSize not set
+  runtime_data->hA = hA;
+  runtime_data->dA = dA;
+  runtime_data->stream = stream;
 
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(cusparse_data_handle_and_buffer_creation_start,
@@ -262,28 +264,28 @@ generate_data_and_prepare_bench_spmm_csr(
 
   // Create sparse matrix A in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
-      &(runtime_data.matA), A_num_rows, A_num_cols, A_nnz,
+      &(runtime_data->matA), A_num_rows, A_num_cols, A_nnz,
       // dA_csrOffsets, dA_columns, dA_values,
-      (void *)thrust::raw_pointer_cast(runtime_data.dA.row_offsets.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dA.column_indices.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dA.values.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dA.row_offsets.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dA.column_indices.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dA.values.data()),
       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
       CUDA_R_32F))
   // Create dense matrix B
-  CHECK_CUSPARSE(cusparseCreateDnMat(&(runtime_data.matB), A_num_cols,
+  CHECK_CUSPARSE(cusparseCreateDnMat(&(runtime_data->matB), A_num_cols,
                                      B_num_cols, ldb, dB, CUDA_R_32F,
                                      CUSPARSE_ORDER_COL))
   // Create dense matrix C
-  CHECK_CUSPARSE(cusparseCreateDnMat(&(runtime_data.matC), A_num_rows,
+  CHECK_CUSPARSE(cusparseCreateDnMat(&(runtime_data->matC), A_num_rows,
                                      B_num_cols, ldc, dC, CUDA_R_32F,
                                      CUSPARSE_ORDER_COL))
   // Allocate an external buffer if needed
   CHECK_CUSPARSE(cusparseSpMM_bufferSize(
       handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-      CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, runtime_data.matA,
-      runtime_data.matB, &beta, runtime_data.matC, CUDA_R_32F,
-      CUSPARSE_SPMM_ALG_DEFAULT, &(runtime_data.bufferSize)))
-  CHECK_CUDA(cudaMalloc(&(runtime_data.dBuffer), runtime_data.bufferSize))
+      CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, runtime_data->matA,
+      runtime_data->matB, &beta, runtime_data->matC, CUDA_R_32F,
+      CUSPARSE_SPMM_ALG_DEFAULT, &(runtime_data->bufferSize)))
+  CHECK_CUDA(cudaMalloc(&(runtime_data->dBuffer), runtime_data->bufferSize))
 
   if (enable_timing) {
     CHECK_CUDA(
@@ -315,9 +317,7 @@ generate_data_and_prepare_bench_spmm_csr(
           flag_specify_result_path_and_prefix,
   };
 
-  auto bench_tuple = std::make_tuple(
-      problem_spec,
-      std::make_shared<BenchSpmmCSRRuntimeData>(std::move(runtime_data)));
+  auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
 }
 

@@ -57,6 +57,7 @@
 #include <utils/helper_string.h>
 
 #include <chrono>
+#include <memory>
 #include <tuple>
 
 #include "npy.hpp"
@@ -113,7 +114,7 @@ struct BenchSddmmCSRRuntimeData {
   cusp::csr_matrix<int, float, cusp::device_memory> dC;
 };
 
-std::tuple<BenchSddmmCSRProblemSpec, BenchSddmmCSRRuntimeData>
+std::tuple<BenchSddmmCSRProblemSpec, std::shared_ptr<BenchSddmmCSRRuntimeData>>
 generate_data_and_prepare(const int argc, const char **argv) {
   // Host problem definition
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
@@ -152,6 +153,9 @@ generate_data_and_prepare(const int argc, const char **argv) {
   float *dA, *dB;
   cusparseHandle_t handle = NULL;
   size_t bufferSize = 0;
+
+  std::shared_ptr<BenchSddmmCSRRuntimeData> runtime_data =
+      std::make_shared<BenchSddmmCSRRuntimeData>();
 
   // initializing (instantiating??) data
   // float hA[]         = { 1.0f,   2.0f,  3.0f,  4.0f,
@@ -217,60 +221,58 @@ generate_data_and_prepare(const int argc, const char **argv) {
           flag_specify_result_path_and_prefix,
   };
 
-  BenchSddmmCSRRuntimeData runtime_data{
-      .C_nnz = C_nnz,
-      .B_num_rows = B_num_rows,
-      .lda = lda,
-      .ldb = ldb,
-      .A_size = A_size,
-      .B_size = B_size,
-      .alpha = alpha,
-      .beta = beta,
-      .hA = hA,
-      .hB = hB,
-      .dA = dA,
-      .dB = dB,
-      .handle = handle,
-      .bufferSize = bufferSize,
-      .hC = hC,
-      .dC = dC,
-  };
+  runtime_data->C_nnz = C_nnz;
+  runtime_data->B_num_rows = B_num_rows;
+  runtime_data->lda = lda;
+  runtime_data->ldb = ldb;
+  runtime_data->A_size = A_size;
+  runtime_data->B_size = B_size;
+  runtime_data->alpha = alpha;
+  runtime_data->beta = beta;
+  runtime_data->hA = hA;
+  runtime_data->hB = hB;
+  runtime_data->dA = dA;
+  runtime_data->dB = dB;
+  runtime_data->handle = handle;
+  runtime_data->bufferSize = bufferSize;
+  runtime_data->hC = hC;
+  runtime_data->dC = dC;
 
   // Create dense matrix A
   CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matA), problem_spec.A_num_rows, problem_spec.A_num_cols,
-      runtime_data.lda, runtime_data.dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
+      &(runtime_data->matA), problem_spec.A_num_rows, problem_spec.A_num_cols,
+      runtime_data->lda, runtime_data->dA, CUDA_R_32F, CUSPARSE_ORDER_COL))
   // Create dense matrix B
   CHECK_CUSPARSE(cusparseCreateDnMat(
-      &(runtime_data.matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
-      runtime_data.ldb, runtime_data.dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
+      &(runtime_data->matB), problem_spec.A_num_cols, problem_spec.B_num_cols,
+      runtime_data->ldb, runtime_data->dB, CUDA_R_32F, CUSPARSE_ORDER_COL))
   // Create sparse matrix C in CSR format
   CHECK_CUSPARSE(cusparseCreateCsr(
       // original &matC, A_num_rows, B_num_cols, C_nnz,
-      &(runtime_data.matC), problem_spec.A_num_rows, problem_spec.B_num_cols,
-      runtime_data.C_nnz,
+      &(runtime_data->matC), problem_spec.A_num_rows, problem_spec.B_num_cols,
+      runtime_data->C_nnz,
       // dC_offsets, dC_columns, dC_values,
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.row_offsets.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.column_indices.data()),
-      (void *)thrust::raw_pointer_cast(runtime_data.dC.values.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dC.row_offsets.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dC.column_indices.data()),
+      (void *)thrust::raw_pointer_cast(runtime_data->dC.values.data()),
       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
       CUDA_R_32F))
   // allocate an external buffer if needed
   CHECK_CUSPARSE(cusparseSDDMM_bufferSize(
-      runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-      CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
-      runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
-      runtime_data.matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
-      &(runtime_data.bufferSize)))
+      runtime_data->handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+      CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data->alpha),
+      runtime_data->matA, runtime_data->matB, &(runtime_data->beta),
+      runtime_data->matC, CUDA_R_32F, CUSPARSE_SDDMM_ALG_DEFAULT,
+      &(runtime_data->bufferSize)))
   CHECK_CUDA(
-      cudaMalloc((void **)&(runtime_data.dBuffer), runtime_data.bufferSize))
+      cudaMalloc((void **)&(runtime_data->dBuffer), runtime_data->bufferSize))
 
   auto bench_tuple = std::make_tuple(problem_spec, runtime_data);
   return bench_tuple;
 }
 
-void compute(BenchSddmmCSRProblemSpec problem_spec,
-             BenchSddmmCSRRuntimeData runtime_data) {
+void compute(BenchSddmmCSRProblemSpec &problem_spec,
+             BenchSddmmCSRRuntimeData &runtime_data) {
   // CUSPARSE APIs
   cusparseHandle_t handle = NULL;
   cusparseDnMatDescr_t matA, matB;
@@ -323,8 +325,8 @@ void compute(BenchSddmmCSRProblemSpec problem_spec,
 }
 
 // destroy matrix/vector descriptors
-void cleanUp(BenchSddmmCSRProblemSpec problem_spec,
-             BenchSddmmCSRRuntimeData runtime_data) {
+void cleanUp(BenchSddmmCSRProblemSpec &problem_spec,
+             BenchSddmmCSRRuntimeData &runtime_data) {
   // Destroy matrix/vector descriptors
   // matA & matB dense, matC sparse
   CHECK_CUSPARSE(cusparseDestroyDnMat(runtime_data.matA))
@@ -410,6 +412,6 @@ int main_bench_sddmm_csr(const int argc, const char **argv) {
   if (bench_spec.enable_timing) {
     printf("WARNING: timing is not implemented yet\n");
   }
-  compute(bench_spec, bench_data);
-  cleanUp(bench_spec, bench_data);
+  compute(bench_spec, *(bench_data.get()));
+  cleanUp(bench_spec, *(bench_data.get()));
 }
