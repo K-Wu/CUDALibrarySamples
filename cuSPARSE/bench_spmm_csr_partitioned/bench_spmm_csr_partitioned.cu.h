@@ -100,6 +100,8 @@ struct TimingResults {
       utility_timestamps;
 };
 
+// TODO: Support algorithm specification: right now we uses
+// CUSPARSE_SPMM_ALG_DEFAULT
 struct ProblemSpec {
   int A_num_rows;
   int A_num_cols;
@@ -138,8 +140,8 @@ struct RuntimeData {
   std::vector<void *> dBuffers;
   std::vector<size_t> bufferSizes;
   // Keep hA in case data needs to be dumped
-  cusp::csr_matrix<int, float, cusp::host_memory> hA;
-  std::vector<cusp::csr_matrix<int, float, cusp::host_memory>> hAA;
+  cusp::coo_matrix<int, float, cusp::host_memory> hA;
+  std::vector<cusp::coo_matrix<int, float, cusp::host_memory>> hAA;
   std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
   // The recommended way is to switch stream before CUSPARSE compute APIs by
   // cusparseSetStream() And in practice concurrent kernels won't be larger than
@@ -279,11 +281,18 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   // instantiating data
   hB = (float *)malloc(sizeof(float) * B_size);
   generate_random_matrix(hB, B_size);
-  cusp::csr_matrix<int, float, cusp::host_memory> hA =
+  cusp::coo_matrix<int, float, cusp::host_memory> hA =
       generate_random_sparse_matrix_nodup<
-          cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
+          cusp::coo_matrix<int, float, cusp::host_memory>>(A_num_rows,
                                                            A_num_cols, A_nnz);
-  auto hAA = partitionMatrix(hA, AA_num_rows, AA_num_cols);
+  std::vector<cusp::coo_matrix<int, float, cusp::host_memory>> hAA;
+  if (AA_num_rows == A_num_rows && AA_num_cols == A_num_cols) {
+    // Simplify the logic when there is only one partition
+    hAA.push_back(hA);
+  } else {
+    hAA = partitionMatrix(hA, AA_num_rows, AA_num_cols);
+  }
+
   std::vector<cusp::csr_matrix<int, float, cusp::device_memory>> dAA;
   std::vector<int> AA_nnz;
   for (auto &AA : hAA) {

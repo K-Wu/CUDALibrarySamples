@@ -88,6 +88,9 @@
     }                                                                          \
   }
 
+// TODO: Support algorithm specification: right now we uses
+// CUSPARSE_SPMM_ALG_DEFAULT
+
 struct BenchSpmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
