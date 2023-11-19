@@ -51,7 +51,7 @@ LIBS         := -lcudart -lcusparse
 all: bench_sddmm_csr_zerocopy
 
 bench_sddmm_csr_zerocopy: bench_sddmm_csr_zerocopy.cu
-	nvcc $(INC) bench_sddmm_csr_zerocopy.cu -o bench_sddmm_csr_zerocopy $(LIBS)
+	nvcc -arch=native $(INC) bench_sddmm_csr_zerocopy.cu -o bench_sddmm_csr_zerocopy $(LIBS)
 
 clean:
 	rm -f bench_sddmm_csr_zerocopy

@@ -51,7 +51,7 @@ LIBS         := -lcudart -lcusparse
 all: bench_spmm_csr_batched
 
 bench_spmm_csr_batched: bench_spmm_csr_batched.cu
-	nvcc $(INC) bench_spmm_csr_batched.cu -o bench_spmm_csr_batched $(LIBS)
+	nvcc -arch=native $(INC) bench_spmm_csr_batched.cu -o bench_spmm_csr_batched $(LIBS)
 
 clean:
 	rm -f bench_spmm_csr_batched

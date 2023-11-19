@@ -51,7 +51,7 @@ LIBS         := -lcudart -lcusparse
 all: bench_spmm_coo
 
 bench_spmm_coo: bench_spmm_coo.cu
-	nvcc $(INC) bench_spmm_coo.cu -o bench_spmm_coo $(LIBS)
+	nvcc -arch=native $(INC) bench_spmm_coo.cu -o bench_spmm_coo $(LIBS)
 
 clean:
 	rm -f bench_spmm_coo

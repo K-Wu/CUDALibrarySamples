@@ -51,7 +51,7 @@ LIBS         := -lcudart -lcusparse
 all: bench_sparse2dense_csr
 
 bench_sparse2dense_csr: bench_sparse2dense_csr.cu
-	nvcc $(INC) bench_sparse2dense_csr.cu -o bench_sparse2dense_csr $(LIBS)
+	nvcc -arch=native $(INC) bench_sparse2dense_csr.cu -o bench_sparse2dense_csr $(LIBS)
 
 clean:
 	rm -f bench_sparse2dense_csr

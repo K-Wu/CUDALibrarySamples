@@ -51,7 +51,7 @@ LIBS         := -lcudart -lcusparse
 all: bench_spmm_csr_partitioned
 
 bench_spmm_csr_partitioned: bench_spmm_csr_partitioned.cu bench_spmm_csr_partitioned.cu.h
-	nvcc -std=c++17 $(INC) bench_spmm_csr_partitioned.cu -o bench_spmm_csr_partitioned $(LIBS)
+	nvcc -std=c++17 -arch=native $(INC) bench_spmm_csr_partitioned.cu -o bench_spmm_csr_partitioned $(LIBS)
 
 clean:
 	rm -f bench_spmm_csr_partitioned
