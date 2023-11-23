@@ -828,10 +828,10 @@ void _create_graph_reference(ProblemSpec &bench_spec, RuntimeData &bench_data,
   return;
 }
 
-CUDAGraphConstructor<cudaStream_t> create_graph(ProblemSpec &bench_spec,
-                                                RuntimeData &bench_data,
-                                                TimingResults &timing_results) {
-  CUDAGraphConstructor<cudaStream_t> graph_constructor;
+CUDAExperimentalGraphConstructor<cudaStream_t> create_graph(
+    ProblemSpec &bench_spec, RuntimeData &bench_data,
+    TimingResults &timing_results) {
+  CUDAExperimentalGraphConstructor<cudaStream_t> graph_constructor;
   for (cudaStream_t stream : bench_data.streams) {
     graph_constructor.registerStream(stream);
   }
