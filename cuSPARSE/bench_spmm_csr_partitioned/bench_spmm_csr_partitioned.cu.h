@@ -109,7 +109,7 @@ struct ProblemSpec {
   int AA_num_rows;
   int AA_num_cols;
   int BB_num_cols;
-  float A_sparsity;
+  float A_density;
   bool enable_dump;
   bool enable_timing;
   bool enable_per_stream_timing;
@@ -156,7 +156,7 @@ void print_usage() {
       "Usage: bench_spmm_csr_partitioned --A_num_rows=## --A_num_cols=## "
       "--B_num_cols=## "
       "--AA_num_rows=## --AA_num_cols=## --BB_num_cols=## "
-      "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+      "--A_density=0.## [--enable_dump] [--result_path_and_prefix=...] "
       "[--enable_timing] [--enable_per_stream_timing] [--enable_debug_timing] "
       "[--test_API_on_stream]\n");
   // Print the meaning of each argument
@@ -198,7 +198,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   int AA_num_rows = getCmdLineArgumentInt(argc, argv, "AA_num_rows");
   int AA_num_cols = getCmdLineArgumentInt(argc, argv, "AA_num_cols");
   int BB_num_cols = getCmdLineArgumentInt(argc, argv, "BB_num_cols");
-  float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
+  float A_density = getCmdLineArgumentFloat(argc, argv, "A_density");
   int nstreams = getCmdLineArgumentInt(argc, argv, "nstreams");
   nstreams = (nstreams > 0) ? nstreams : 1;  // default value
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
@@ -215,14 +215,14 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
       AA_num_rows == 0 || AA_num_cols == 0 || BB_num_cols == 0 ||
-      A_sparsity == 0.0f) {
+      A_density == 0.0f) {
     print_usage();
     // Example: ./bench_spmm_csr_partitioned --A_num_rows=1024 --A_num_cols=512
     // --B_num_cols=512 --AA_num_rows=128 --AA_num_cols=64 --BB_num_cols=64
-    // --A_sparsity=0.1 --test_API_on_stream
+    // --A_density=0.1 --test_API_on_stream
     // Example: ./bench_spmm_csr_partitioned --A_num_rows=128 --A_num_cols=256
     // --B_num_cols=256 --AA_num_rows=16 --AA_num_cols=64 --BB_num_cols=64
-    // --A_sparsity=0.1
+    // --A_density=0.1
     exit(EXIT_FAILURE);
   }
   if (nstreams == 1 && enable_per_stream_timing) {
@@ -256,10 +256,10 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
   printf("AA_num_rows: %d\n", AA_num_rows);
   printf("AA_num_cols: %d\n", AA_num_cols);
   printf("BB_num_cols: %d\n", BB_num_cols);
-  printf("A_sparsity: %f\n", A_sparsity);
+  printf("A_density: %f\n", A_density);
 
   // ***** END OF HOST PROBLEM DEFINITION *****
-  int A_nnz = A_num_rows * A_num_cols * A_sparsity;
+  int A_nnz = A_num_rows * A_num_cols * A_density;
   int B_num_rows = A_num_cols;
   int ldb = B_num_rows;
   int ldc = A_num_rows;
@@ -577,7 +577,7 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
       .AA_num_rows = AA_num_rows,
       .AA_num_cols = AA_num_cols,
       .BB_num_cols = BB_num_cols,
-      .A_sparsity = A_sparsity,
+      .A_density = A_density,
       .enable_dump = enable_dump,
       .enable_timing = enable_timing,
       .enable_per_stream_timing = enable_per_stream_timing,
@@ -1191,7 +1191,7 @@ void cleanUp(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
             problem_spec.A_num_cols, problem_spec.B_num_cols,
-            runtime_data.A_nnz, problem_spec.A_sparsity);
+            runtime_data.A_nnz, problem_spec.A_density);
     fclose(fp);
     cusp::io::write_matrix_market_file(runtime_data.hA,
                                        result_path_and_prefix + ".A.mtx");

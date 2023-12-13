@@ -86,7 +86,7 @@ struct BenchSddmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
   int B_num_cols;
-  float C_sparsity;
+  float C_density;
   bool enable_dump;
   bool enable_timing;
   bool enable_preprocess;
@@ -120,29 +120,28 @@ generate_data_and_prepare(const int argc, const char **argv) {
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-  float C_sparsity = getCmdLineArgumentFloat(argc, argv, "C_sparsity");
+  float C_density = getCmdLineArgumentFloat(argc, argv, "C_density");
   bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
   bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
   char *cli_result_path_and_prefix;
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
-  if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
-      C_sparsity == 0) {
+  if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 || C_density == 0) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--C_sparsity=0.## [--enable_preprocess]\n",
+        "--C_density=0.## [--enable_preprocess]\n",
         argv[0]);
     exit(EXIT_FAILURE);
   }
   printf("A_num_rows: %d\n", A_num_rows);
   printf("A_num_cols: %d\n", A_num_cols);
   printf("B_num_cols: %d\n", B_num_cols);
-  printf("C_sparsity: %f\n", C_sparsity);
+  printf("C_density: %f\n", C_density);
   // ***** END OF HOST PROBLEM DEFINITION *****
   int B_num_rows = A_num_cols;
   // int   C_nnz        = 9;
-  int C_nnz = A_num_rows * B_num_cols * C_sparsity;
+  int C_nnz = A_num_rows * B_num_cols * C_density;
   int lda = A_num_rows;
   int ldb = A_num_cols;
   int A_size = lda * A_num_cols;
@@ -212,7 +211,7 @@ generate_data_and_prepare(const int argc, const char **argv) {
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
-      .C_sparsity = C_sparsity,
+      .C_density = C_density,
       .enable_dump = enable_dump,
       .enable_timing = enable_timing,
       .enable_preprocess = enable_preprocess,
@@ -354,7 +353,7 @@ void cleanUp(BenchSddmmCSRProblemSpec &problem_spec,
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
             problem_spec.A_num_cols, problem_spec.B_num_cols,
-            runtime_data.C_nnz, problem_spec.C_sparsity);
+            runtime_data.C_nnz, problem_spec.C_density);
     fclose(fp);
 
     cusp::csr_matrix<int, float, cusp::host_memory> result_hC(runtime_data.dC);

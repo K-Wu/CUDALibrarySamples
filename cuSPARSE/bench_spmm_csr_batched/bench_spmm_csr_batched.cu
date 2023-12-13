@@ -88,20 +88,20 @@ int main(const int argc, const char **argv) {
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-  float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
+  float A_density = getCmdLineArgumentFloat(argc, argv, "A_density");
   int num_batches = getCmdLineArgumentInt(argc, argv, "num_batches");
 
   if (argc != 6) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--A_sparsity=0.## --num_batches=##\n",
+        "--A_density=0.## --num_batches=##\n",
         argv[0]);
     return EXIT_FAILURE;
   }
   printf("A_num_rows: %d\n", A_num_rows);
   printf("A_num_cols: %d\n", A_num_cols);
   printf("B_num_cols: %d\n", B_num_cols);
-  printf("A_sparsity: %f\n", A_sparsity);
+  printf("A_density: %f\n", A_density);
   printf("num_batches: %d\n", num_batches);
   // ***** END OF HOST PROBLEM DEFINITION *****
 
@@ -110,7 +110,7 @@ int main(const int argc, const char **argv) {
   int ldc = A_num_rows;
   int B_size = ldb * B_num_cols;
   int C_size = ldc * B_num_cols;
-  int A_nnz = A_num_rows * A_num_cols * A_sparsity;
+  int A_nnz = A_num_rows * A_num_cols * A_density;
 
   // initializing data
   // int hA_csrOffsets[] = {0, 3, 4, 7, 9};

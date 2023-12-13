@@ -46,169 +46,172 @@
  * comments to the code, the above Disclaimer and U.S. Government End
  * Users Notice.
  */
-#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
-#include <cusparse.h>         // cusparseSpMM
-#include <stdio.h>            // printf
-#include <stdlib.h>           // EXIT_FAILURE
-#include <cusp/coo_matrix.h>  // cusp::csr_matrix
+#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
+#include <cusp/coo_matrix.h>   // cusp::csr_matrix
+#include <cusparse.h>          // cusparseSpMM
+#include <stdio.h>             // printf
+#include <stdlib.h>            // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 #include <utils/helper_string.h>
+
 #include <chrono>
 
-#define CHECK_CUDA(func)                                               \
-    {                                                                  \
-        cudaError_t status = (func);                                   \
-        if (status != cudaSuccess)                                     \
-        {                                                              \
-            printf("CUDA API failed at line %d with error: %s (%d)\n", \
-                   __LINE__, cudaGetErrorString(status), status);      \
-            return EXIT_FAILURE;                                       \
-        }                                                              \
-    }
+#define CHECK_CUDA(func)                                                   \
+  {                                                                        \
+    cudaError_t status = (func);                                           \
+    if (status != cudaSuccess) {                                           \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
+             cudaGetErrorString(status), status);                          \
+      return EXIT_FAILURE;                                                 \
+    }                                                                      \
+  }
 
-#define CHECK_CUSPARSE(func)                                               \
-    {                                                                      \
-        cusparseStatus_t status = (func);                                  \
-        if (status != CUSPARSE_STATUS_SUCCESS)                             \
-        {                                                                  \
-            printf("CUSPARSE API failed at line %d with error: %s (%d)\n", \
-                   __LINE__, cusparseGetErrorString(status), status);      \
-            return EXIT_FAILURE;                                           \
-        }                                                                  \
-    }
+#define CHECK_CUSPARSE(func)                                                   \
+  {                                                                            \
+    cusparseStatus_t status = (func);                                          \
+    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
+      printf("CUSPARSE API failed at line %d with error: %s (%d)\n", __LINE__, \
+             cusparseGetErrorString(status), status);                          \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
+  }
 
-int main(const int argc, const char** argv)
-{
-    // Host problem definition
-    int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
-    int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
-    int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-    float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
-    if (argc != 5){
-        printf("Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## --A_sparsity=0.##\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-    printf("A_num_rows: %d\n", A_num_rows);
-    printf("A_num_cols: %d\n", A_num_cols);
-    printf("B_num_cols: %d\n", B_num_cols);
-    printf("A_sparsity: %f\n", A_sparsity);
-    // ***** END OF HOST PROBLEM DEFINITION *****
-    int B_num_rows = A_num_cols;
-    int ldb = B_num_rows;
-    int ldc = A_num_rows;
-    int B_size = ldb * B_num_cols;
-    int C_size = ldc * B_num_cols;
-    
-    int A_nnz = A_num_rows * A_num_cols * A_sparsity;
-    // initializing data
-    // int   hA_rows[]    = { 0, 0, 0, 1, 2, 2, 2, 3, 3 };
-    // int   hA_columns[] = { 0, 2, 3, 1, 0, 2, 3, 1, 3 };
-    // float hA_values[]  = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
-    //                        6.0f, 7.0f, 8.0f, 9.0f };
-    float *hB = (float *)malloc(B_size * sizeof(float));
-    generate_random_matrix(hB, B_size);
-    cusp::coo_matrix<int, float, cusp::host_memory> hA = generate_random_sparse_matrix<cusp::coo_matrix<int, float, cusp::host_memory>>(A_num_rows, A_num_cols, A_nnz);
-    A_nnz = hA.values.size();
-    printf("actual A_nnz due to deduplication during random data generation: %d\n", A_nnz);
-    float alpha = 1.0f;
-    float beta = 0.0f;
-    //--------------------------------------------------------------------------
-    cusp::coo_matrix<int, float, cusp::device_memory> dA(hA);
-    // Device memory management
-    // int   *dA_rows, *dA_columns;
-    // float *dA_values,
-    float *dB, *dC;
-    // CHECK_CUDA( cudaMalloc((void**) &dA_rows,    A_nnz * sizeof(int))    )
-    // CHECK_CUDA( cudaMalloc((void**) &dA_columns, A_nnz * sizeof(int))    )
-    // CHECK_CUDA( cudaMalloc((void**) &dA_values,  A_nnz * sizeof(float))  )
-    CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
-    CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
+int main(const int argc, const char **argv) {
+  // Host problem definition
+  int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
+  int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
+  int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
+  float A_density = getCmdLineArgumentFloat(argc, argv, "A_density");
+  if (argc != 5) {
+    printf(
+        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+        "--A_density=0.##\n",
+        argv[0]);
+    return EXIT_FAILURE;
+  }
+  printf("A_num_rows: %d\n", A_num_rows);
+  printf("A_num_cols: %d\n", A_num_cols);
+  printf("B_num_cols: %d\n", B_num_cols);
+  printf("A_density: %f\n", A_density);
+  // ***** END OF HOST PROBLEM DEFINITION *****
+  int B_num_rows = A_num_cols;
+  int ldb = B_num_rows;
+  int ldc = A_num_rows;
+  int B_size = ldb * B_num_cols;
+  int C_size = ldc * B_num_cols;
 
-    // CHECK_CUDA( cudaMemcpy(dA_rows, hA_rows, A_nnz * sizeof(int),
-    //                        cudaMemcpyHostToDevice) )
-    // CHECK_CUDA( cudaMemcpy(dA_columns, hA_columns, A_nnz * sizeof(int),
-    //                        cudaMemcpyHostToDevice) )
-    // CHECK_CUDA( cudaMemcpy(dA_values, hA_values, A_nnz * sizeof(float),
-    //                        cudaMemcpyHostToDevice) )
-    CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float),
-                          cudaMemcpyHostToDevice))
-    // CHECK_CUDA( cudaMemcpy(dC, hC, C_size * sizeof(float),
-    //                        cudaMemcpyHostToDevice) )
-    //--------------------------------------------------------------------------
-    // CUSPARSE APIs
-    cusparseHandle_t handle = NULL;
-    cusparseSpMatDescr_t matA;
-    cusparseDnMatDescr_t matB, matC;
-    void *dBuffer = NULL;
-    size_t bufferSize = 0;
-    CHECK_CUSPARSE(cusparseCreate(&handle))
-    // Create sparse matrix A in COO format
-    CHECK_CUSPARSE(cusparseCreateCoo(&matA, A_num_rows, A_num_cols, A_nnz,
-                                     // dA_rows, dA_columns, dA_values,
-                                     (void *)thrust::raw_pointer_cast(dA.row_indices.data()),
-                                     (void *)thrust::raw_pointer_cast(dA.column_indices.data()),
-                                     (void *)thrust::raw_pointer_cast(dA.values.data()),
-                                     CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F))
-    // Create dense matrix B
-    CHECK_CUSPARSE(cusparseCreateDnMat(&matB, B_num_rows, B_num_cols, ldb, dB,
-                                       CUDA_R_32F, CUSPARSE_ORDER_COL))
-    // Create dense matrix C
-    CHECK_CUSPARSE(cusparseCreateDnMat(&matC, A_num_rows, B_num_cols, ldc, dC,
-                                       CUDA_R_32F, CUSPARSE_ORDER_COL))
-    // allocate an external buffer if needed
-    CHECK_CUSPARSE(cusparseSpMM_bufferSize(
-        handle,
-        CUSPARSE_OPERATION_NON_TRANSPOSE,
-        CUSPARSE_OPERATION_NON_TRANSPOSE,
-        &alpha, matA, matB, &beta, matC, CUDA_R_32F,
-        CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize))
-    CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
+  int A_nnz = A_num_rows * A_num_cols * A_density;
+  // initializing data
+  // int   hA_rows[]    = { 0, 0, 0, 1, 2, 2, 2, 3, 3 };
+  // int   hA_columns[] = { 0, 2, 3, 1, 0, 2, 3, 1, 3 };
+  // float hA_values[]  = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+  //                        6.0f, 7.0f, 8.0f, 9.0f };
+  float *hB = (float *)malloc(B_size * sizeof(float));
+  generate_random_matrix(hB, B_size);
+  cusp::coo_matrix<int, float, cusp::host_memory> hA =
+      generate_random_sparse_matrix<
+          cusp::coo_matrix<int, float, cusp::host_memory>>(A_num_rows,
+                                                           A_num_cols, A_nnz);
+  A_nnz = hA.values.size();
+  printf(
+      "actual A_nnz due to deduplication during random data generation: %d\n",
+      A_nnz);
+  float alpha = 1.0f;
+  float beta = 0.0f;
+  //--------------------------------------------------------------------------
+  cusp::coo_matrix<int, float, cusp::device_memory> dA(hA);
+  // Device memory management
+  // int   *dA_rows, *dA_columns;
+  // float *dA_values,
+  float *dB, *dC;
+  // CHECK_CUDA( cudaMalloc((void**) &dA_rows,    A_nnz * sizeof(int))    )
+  // CHECK_CUDA( cudaMalloc((void**) &dA_columns, A_nnz * sizeof(int))    )
+  // CHECK_CUDA( cudaMalloc((void**) &dA_values,  A_nnz * sizeof(float))  )
+  CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
 
-    // execute SpMM
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-    cudaDeviceSynchronize();
-    start = std::chrono::system_clock::now();
-    CHECK_CUSPARSE(cusparseSpMM(handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &alpha, matA, matB, &beta, matC, CUDA_R_32F,
-                                CUSPARSE_SPMM_ALG_DEFAULT, dBuffer))
-    cudaDeviceSynchronize();
-    end = std::chrono::system_clock::now();
-    printf("cusparseSpMM time (microseconds): %ld\n",
-           std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-   
-    // destroy matrix/vector descriptors
-    CHECK_CUSPARSE(cusparseDestroySpMat(matA))
-    CHECK_CUSPARSE(cusparseDestroyDnMat(matB))
-    CHECK_CUSPARSE(cusparseDestroyDnMat(matC))
-    CHECK_CUSPARSE(cusparseDestroy(handle))
-    //--------------------------------------------------------------------------
-    // device result check
-    // CHECK_CUDA( cudaMemcpy(hC, dC, C_size * sizeof(float),
-    //                        cudaMemcpyDeviceToHost) )
-    // int correct = 1;
-    // for (int i = 0; i < A_num_rows; i++) {
-    //     for (int j = 0; j < B_num_cols; j++) {
-    //         if (hC[i + j * ldc] != hC_result[i + j * ldc]) {
-    //             correct = 0; // direct floating point comparison is not reliable
-    //             break;
-    //         }
-    //     }
-    // }
-    // if (correct)
-    //     printf("spmm_coo_example test PASSED\n");
-    // else
-    //     printf("spmm_coo_example test FAILED: wrong result\n");
-    //--------------------------------------------------------------------------
-    // device memory deallocation
-    CHECK_CUDA(cudaFree(dBuffer))
-    // CHECK_CUDA( cudaFree(dA_rows) )
-    // CHECK_CUDA( cudaFree(dA_columns) )
-    // CHECK_CUDA( cudaFree(dA_values) )
-    CHECK_CUDA(cudaFree(dB))
-    CHECK_CUDA(cudaFree(dC))
-    free(hB);
-    return EXIT_SUCCESS;
+  // CHECK_CUDA( cudaMemcpy(dA_rows, hA_rows, A_nnz * sizeof(int),
+  //                        cudaMemcpyHostToDevice) )
+  // CHECK_CUDA( cudaMemcpy(dA_columns, hA_columns, A_nnz * sizeof(int),
+  //                        cudaMemcpyHostToDevice) )
+  // CHECK_CUDA( cudaMemcpy(dA_values, hA_values, A_nnz * sizeof(float),
+  //                        cudaMemcpyHostToDevice) )
+  CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
+  // CHECK_CUDA( cudaMemcpy(dC, hC, C_size * sizeof(float),
+  //                        cudaMemcpyHostToDevice) )
+  //--------------------------------------------------------------------------
+  // CUSPARSE APIs
+  cusparseHandle_t handle = NULL;
+  cusparseSpMatDescr_t matA;
+  cusparseDnMatDescr_t matB, matC;
+  void *dBuffer = NULL;
+  size_t bufferSize = 0;
+  CHECK_CUSPARSE(cusparseCreate(&handle))
+  // Create sparse matrix A in COO format
+  CHECK_CUSPARSE(cusparseCreateCoo(
+      &matA, A_num_rows, A_num_cols, A_nnz,
+      // dA_rows, dA_columns, dA_values,
+      (void *)thrust::raw_pointer_cast(dA.row_indices.data()),
+      (void *)thrust::raw_pointer_cast(dA.column_indices.data()),
+      (void *)thrust::raw_pointer_cast(dA.values.data()), CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F))
+  // Create dense matrix B
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matB, B_num_rows, B_num_cols, ldb, dB,
+                                     CUDA_R_32F, CUSPARSE_ORDER_COL))
+  // Create dense matrix C
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matC, A_num_rows, B_num_cols, ldc, dC,
+                                     CUDA_R_32F, CUSPARSE_ORDER_COL))
+  // allocate an external buffer if needed
+  CHECK_CUSPARSE(cusparseSpMM_bufferSize(
+      handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+      CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA, matB, &beta, matC,
+      CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize))
+  CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
+
+  // execute SpMM
+  std::chrono::time_point<std::chrono::system_clock> start, end;
+  cudaDeviceSynchronize();
+  start = std::chrono::system_clock::now();
+  CHECK_CUSPARSE(cusparseSpMM(handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+                              CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, matA,
+                              matB, &beta, matC, CUDA_R_32F,
+                              CUSPARSE_SPMM_ALG_DEFAULT, dBuffer))
+  cudaDeviceSynchronize();
+  end = std::chrono::system_clock::now();
+  printf("cusparseSpMM time (microseconds): %ld\n",
+         std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+             .count());
+
+  // destroy matrix/vector descriptors
+  CHECK_CUSPARSE(cusparseDestroySpMat(matA))
+  CHECK_CUSPARSE(cusparseDestroyDnMat(matB))
+  CHECK_CUSPARSE(cusparseDestroyDnMat(matC))
+  CHECK_CUSPARSE(cusparseDestroy(handle))
+  //--------------------------------------------------------------------------
+  // device result check
+  // CHECK_CUDA( cudaMemcpy(hC, dC, C_size * sizeof(float),
+  //                        cudaMemcpyDeviceToHost) )
+  // int correct = 1;
+  // for (int i = 0; i < A_num_rows; i++) {
+  //     for (int j = 0; j < B_num_cols; j++) {
+  //         if (hC[i + j * ldc] != hC_result[i + j * ldc]) {
+  //             correct = 0; // direct floating point comparison is not
+  //             reliable break;
+  //         }
+  //     }
+  // }
+  // if (correct)
+  //     printf("spmm_coo_example test PASSED\n");
+  // else
+  //     printf("spmm_coo_example test FAILED: wrong result\n");
+  //--------------------------------------------------------------------------
+  // device memory deallocation
+  CHECK_CUDA(cudaFree(dBuffer))
+  // CHECK_CUDA( cudaFree(dA_rows) )
+  // CHECK_CUDA( cudaFree(dA_columns) )
+  // CHECK_CUDA( cudaFree(dA_values) )
+  CHECK_CUDA(cudaFree(dB))
+  CHECK_CUDA(cudaFree(dC))
+  free(hB);
+  return EXIT_SUCCESS;
 }

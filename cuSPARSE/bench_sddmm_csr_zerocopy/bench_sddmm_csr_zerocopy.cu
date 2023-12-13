@@ -79,22 +79,22 @@ int main(const int argc, const char **argv) {
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-  float C_sparsity = getCmdLineArgumentFloat(argc, argv, "C_sparsity");
+  float C_density = getCmdLineArgumentFloat(argc, argv, "C_density");
   if (argc != 5) {
     printf(
         "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-        "--C_sparsity=0.##\n",
+        "--C_density=0.##\n",
         argv[0]);
     return EXIT_FAILURE;
   }
   printf("A_num_rows: %d\n", A_num_rows);
   printf("A_num_cols: %d\n", A_num_cols);
   printf("B_num_cols: %d\n", B_num_cols);
-  printf("C_sparsity: %f\n", C_sparsity);
+  printf("C_density: %f\n", C_density);
   // ***** END OF HOST PROBLEM DEFINITION *****
   int B_num_rows = A_num_cols;
   // int   C_nnz        = 9;
-  int C_nnz = A_num_rows * B_num_cols * C_sparsity;
+  int C_nnz = A_num_rows * B_num_cols * C_density;
   int lda = A_num_rows;
   int ldb = A_num_cols;
   int A_size = lda * A_num_cols;

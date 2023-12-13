@@ -46,98 +46,86 @@
  * comments to the code, the above Disclaimer and U.S. Government End
  * Users Notice.
  */
-#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
-#include <cusparse.h>         // cusparseSpMM
-#include <nvrtc.h>            // nvrtc
-#include <stdio.h>            // printf
-#include <stdlib.h>           // EXIT_FAILURE
+#include <cuda_runtime_api.h>  // cudaMalloc, cudaMemcpy, etc.
 #include <cusp/csr_matrix.h>
+#include <cusparse.h>  // cusparseSpMM
+#include <nvrtc.h>     // nvrtc
+#include <stdio.h>     // printf
+#include <stdlib.h>    // EXIT_FAILURE
 #include <utils/generate_random_data.h>
 #include <utils/helper_string.h>
 
-#define CHECK_CUDA(func)                                               \
-    {                                                                  \
-        cudaError_t status = (func);                                   \
-        if (status != cudaSuccess)                                     \
-        {                                                              \
-            printf("CUDA API failed at line %d with error: %s (%d)\n", \
-                   __LINE__, cudaGetErrorString(status), status);      \
-            return EXIT_FAILURE;                                       \
-        }                                                              \
-    }
+#define CHECK_CUDA(func)                                                   \
+  {                                                                        \
+    cudaError_t status = (func);                                           \
+    if (status != cudaSuccess) {                                           \
+      printf("CUDA API failed at line %d with error: %s (%d)\n", __LINE__, \
+             cudaGetErrorString(status), status);                          \
+      return EXIT_FAILURE;                                                 \
+    }                                                                      \
+  }
 
-#define CHECK_CUSPARSE(func)                                               \
-    {                                                                      \
-        cusparseStatus_t status = (func);                                  \
-        if (status != CUSPARSE_STATUS_SUCCESS)                             \
-        {                                                                  \
-            printf("CUSPARSE API failed at line %d with error: %s (%d)\n", \
-                   __LINE__, cusparseGetErrorString(status), status);      \
-            return EXIT_FAILURE;                                           \
-        }                                                                  \
-    }
+#define CHECK_CUSPARSE(func)                                                   \
+  {                                                                            \
+    cusparseStatus_t status = (func);                                          \
+    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
+      printf("CUSPARSE API failed at line %d with error: %s (%d)\n", __LINE__, \
+             cusparseGetErrorString(status), status);                          \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
+  }
 
-#define CHECK_NVRTC(func)                                               \
-    {                                                                   \
-        nvrtcResult status = (func);                                    \
-        if (status != NVRTC_SUCCESS)                                    \
-        {                                                               \
-            printf("NVRTC API failed at line %d with error: %s (%d)\n", \
-                   __LINE__, nvrtcGetErrorString(status), status);      \
-            exit(EXIT_FAILURE);                                         \
-        }                                                               \
-    }
+#define CHECK_NVRTC(func)                                                   \
+  {                                                                         \
+    nvrtcResult status = (func);                                            \
+    if (status != NVRTC_SUCCESS) {                                          \
+      printf("NVRTC API failed at line %d with error: %s (%d)\n", __LINE__, \
+             nvrtcGetErrorString(status), status);                          \
+      exit(EXIT_FAILURE);                                                   \
+    }                                                                       \
+  }
 
-void nvrtc_compile(int sm_version,
-                   const char *device_fun_str,
-                   const char **extra_options,
-                   int num_extra_options,
-                   void **nvvm_buffer,
-                   size_t *nvvm_buffer_size);
+void nvrtc_compile(int sm_version, const char *device_fun_str,
+                   const char **extra_options, int num_extra_options,
+                   void **nvvm_buffer, size_t *nvvm_buffer_size);
 
-void nvrtc_compile(int sm_version,
-                   const char *device_fun_str,
-                   const char **extra_options,
-                   int num_extra_options,
-                   void **nvvm_buffer,
-                   size_t *nvvm_buffer_size)
-{
-    nvrtcProgram prog;
-    CHECK_NVRTC(nvrtcCreateProgram(&prog, device_fun_str, NULL, 0, NULL, NULL))
-    char arch_str[17] = "-arch=compute_";
-    arch_str[14] = '0' + sm_version / 10;
-    arch_str[15] = '0' + sm_version % 10;
-    arch_str[16] = '\0';
-    int num_options = 4 + num_extra_options;
-    const char **nvrtc_options = (const char **)malloc(num_options *
-                                                       sizeof(const char *));
-    nvrtc_options[0] = arch_str;
-    nvrtc_options[1] = "-rdc=true";
-    nvrtc_options[2] = "-dlto";
-    nvrtc_options[3] = "-std=c++11";
-    for (int i = 0; i < num_extra_options; i++)
-        nvrtc_options[4 + i] = extra_options[i];
-    nvrtcResult status = nvrtcCompileProgram(prog, num_options, nvrtc_options);
-    free(nvrtc_options);
-    if (status != NVRTC_SUCCESS)
-    {
-        size_t log_size = 0;
-        CHECK_NVRTC(nvrtcGetProgramLogSize(prog, &log_size))
-        char *log = (char *)malloc(log_size);
-        CHECK_NVRTC(nvrtcGetProgramLog(prog, log))
-        printf("@@@ DEVICE CODE:\n%s\n---------------------------------\n",
-               device_fun_str);
-        printf("@@@ NVRTC LOG:\n%s\n-----------------------------------\n",
-               log);
-        CHECK_NVRTC(nvrtcDestroyProgram(&prog))
-        free(log);
-        printf("NVRTC FAILED");
-        exit(EXIT_FAILURE);
-    }
-    CHECK_NVRTC(nvrtcGetNVVMSize(prog, nvvm_buffer_size))
-    *nvvm_buffer = malloc(*nvvm_buffer_size);
-    CHECK_NVRTC(nvrtcGetNVVM(prog, (char *)*nvvm_buffer))
+void nvrtc_compile(int sm_version, const char *device_fun_str,
+                   const char **extra_options, int num_extra_options,
+                   void **nvvm_buffer, size_t *nvvm_buffer_size) {
+  nvrtcProgram prog;
+  CHECK_NVRTC(nvrtcCreateProgram(&prog, device_fun_str, NULL, 0, NULL, NULL))
+  char arch_str[17] = "-arch=compute_";
+  arch_str[14] = '0' + sm_version / 10;
+  arch_str[15] = '0' + sm_version % 10;
+  arch_str[16] = '\0';
+  int num_options = 4 + num_extra_options;
+  const char **nvrtc_options =
+      (const char **)malloc(num_options * sizeof(const char *));
+  nvrtc_options[0] = arch_str;
+  nvrtc_options[1] = "-rdc=true";
+  nvrtc_options[2] = "-dlto";
+  nvrtc_options[3] = "-std=c++11";
+  for (int i = 0; i < num_extra_options; i++)
+    nvrtc_options[4 + i] = extra_options[i];
+  nvrtcResult status = nvrtcCompileProgram(prog, num_options, nvrtc_options);
+  free(nvrtc_options);
+  if (status != NVRTC_SUCCESS) {
+    size_t log_size = 0;
+    CHECK_NVRTC(nvrtcGetProgramLogSize(prog, &log_size))
+    char *log = (char *)malloc(log_size);
+    CHECK_NVRTC(nvrtcGetProgramLog(prog, log))
+    printf("@@@ DEVICE CODE:\n%s\n---------------------------------\n",
+           device_fun_str);
+    printf("@@@ NVRTC LOG:\n%s\n-----------------------------------\n", log);
     CHECK_NVRTC(nvrtcDestroyProgram(&prog))
+    free(log);
+    printf("NVRTC FAILED");
+    exit(EXIT_FAILURE);
+  }
+  CHECK_NVRTC(nvrtcGetNVVMSize(prog, nvvm_buffer_size))
+  *nvvm_buffer = malloc(*nvvm_buffer_size);
+  CHECK_NVRTC(nvrtcGetNVVM(prog, (char *)*nvvm_buffer))
+  CHECK_NVRTC(nvrtcDestroyProgram(&prog))
 }
 
 //------------------------------------------------------------------------------
@@ -162,176 +150,172 @@ float epilogue(float accumulation, float old_C_value) {                      \n\
 
 //------------------------------------------------------------------------------
 
-int main(const int argc, const char** argv)
-{
-    // Host problem definition
-    int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
-    int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
-    int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-    float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
-    if (argc != 5){
-        printf("Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## --A_sparsity=0.##\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-    printf("A_num_rows: %d\n", A_num_rows);
-    printf("A_num_cols: %d\n", A_num_cols);
-    printf("B_num_cols: %d\n", B_num_cols);
-    printf("A_sparsity: %f\n", A_sparsity);
+int main(const int argc, const char **argv) {
+  // Host problem definition
+  int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
+  int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
+  int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
+  float A_density = getCmdLineArgumentFloat(argc, argv, "A_density");
+  if (argc != 5) {
+    printf(
+        "Usage: %s --A_num_rows=## --A_num_cols=## --B_num_cols=## "
+        "--A_density=0.##\n",
+        argv[0]);
+    return EXIT_FAILURE;
+  }
+  printf("A_num_rows: %d\n", A_num_rows);
+  printf("A_num_cols: %d\n", A_num_cols);
+  printf("B_num_cols: %d\n", B_num_cols);
+  printf("A_density: %f\n", A_density);
 
-    // ***** END OF HOST PROBLEM DEFINITION *****
-    // int   A_nnz           = 9;
-    int A_nnz = A_num_rows * A_num_cols * A_sparsity;
-    int B_num_rows = A_num_cols;
-    
-    int ldb = B_num_cols;
-    int ldc = B_num_cols;
-    int B_size = ldb * B_num_rows;
-    int C_size = ldc * A_num_rows;
-    // initializing data
-    // int hA_csrOffsets[] = {0, 3, 4, 7, 9};
-    // int hA_columns[] = {0, 2, 3, 1, 0, 2, 3, 1, 3};
-    // float hA_values[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
-    //                      6.0f, 7.0f, 8.0f, 9.0f};
+  // ***** END OF HOST PROBLEM DEFINITION *****
+  // int   A_nnz           = 9;
+  int A_nnz = A_num_rows * A_num_cols * A_density;
+  int B_num_rows = A_num_cols;
 
-    // float hB[]            = {  1.0f,  2.0f,  3.0f,
-    //                            4.0f,  5.0f,  6.0f,
-    //                            7.0f,  8.0f,  9.0f,
-    //                           10.0f, 11.0f, 12.0f };
-    float *hB = (float *)malloc(B_size * sizeof(float));
-    generate_random_matrix(hB, B_size);
-    // float hC[]            = { 1.0f, 1.0f, 1.0f,
-    //                           1.0f, 1.0f, 1.0f,
-    //                           1.0f, 1.0f, 1.0f,
-    //                           1.0f, 1.0f, 1.0f };
-    float *hC = (float *)malloc(C_size * sizeof(float));
-    for (int idx = 0; idx < C_size; idx++)
-        hC[idx] = 1.0f;
-    cusp::csr_matrix<int, float, cusp::host_memory> hA = generate_random_sparse_matrix<cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows, A_num_cols, A_nnz);
-    generate_random_matrix(hB, B_size);
-    A_nnz = hA.values.size();
-    printf("actual A_nnz due to deduplication during random data generation: %d\n", A_nnz);
-    cusp::csr_matrix<int, float, cusp::device_memory> dA(hA);
-    //--------------------------------------------------------------------------
+  int ldb = B_num_cols;
+  int ldc = B_num_cols;
+  int B_size = ldb * B_num_rows;
+  int C_size = ldc * A_num_rows;
+  // initializing data
+  // int hA_csrOffsets[] = {0, 3, 4, 7, 9};
+  // int hA_columns[] = {0, 2, 3, 1, 0, 2, 3, 1, 3};
+  // float hA_values[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+  //                      6.0f, 7.0f, 8.0f, 9.0f};
 
-    // Device memory management
-    // int   *dA_csrOffsets, *dA_columns;
-    // float *dA_values,
-    float *dB, *dC;
-    // CHECK_CUDA( cudaMalloc((void**) &dA_csrOffsets,
-    //                        (A_num_rows + 1) * sizeof(int)) )
-    // CHECK_CUDA( cudaMalloc((void**) &dA_columns, A_nnz * sizeof(int))    )
-    // CHECK_CUDA( cudaMalloc((void**) &dA_values,  A_nnz * sizeof(float))  )
-    CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
-    CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
+  // float hB[]            = {  1.0f,  2.0f,  3.0f,
+  //                            4.0f,  5.0f,  6.0f,
+  //                            7.0f,  8.0f,  9.0f,
+  //                           10.0f, 11.0f, 12.0f };
+  float *hB = (float *)malloc(B_size * sizeof(float));
+  generate_random_matrix(hB, B_size);
+  // float hC[]            = { 1.0f, 1.0f, 1.0f,
+  //                           1.0f, 1.0f, 1.0f,
+  //                           1.0f, 1.0f, 1.0f,
+  //                           1.0f, 1.0f, 1.0f };
+  float *hC = (float *)malloc(C_size * sizeof(float));
+  for (int idx = 0; idx < C_size; idx++) hC[idx] = 1.0f;
+  cusp::csr_matrix<int, float, cusp::host_memory> hA =
+      generate_random_sparse_matrix<
+          cusp::csr_matrix<int, float, cusp::host_memory>>(A_num_rows,
+                                                           A_num_cols, A_nnz);
+  generate_random_matrix(hB, B_size);
+  A_nnz = hA.values.size();
+  printf(
+      "actual A_nnz due to deduplication during random data generation: %d\n",
+      A_nnz);
+  cusp::csr_matrix<int, float, cusp::device_memory> dA(hA);
+  //--------------------------------------------------------------------------
 
-    // CHECK_CUDA( cudaMemcpy(dA_csrOffsets, hA_csrOffsets,
-    //                        (A_num_rows + 1) * sizeof(int),
-    //                        cudaMemcpyHostToDevice) )
-    // CHECK_CUDA( cudaMemcpy(dA_columns, hA_columns, A_nnz * sizeof(int),
-    //                        cudaMemcpyHostToDevice) )
-    // CHECK_CUDA( cudaMemcpy(dA_values, hA_values, A_nnz * sizeof(float),
-    //                        cudaMemcpyHostToDevice) )
-    CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float),
-                          cudaMemcpyHostToDevice))
-    CHECK_CUDA(cudaMemcpy(dC, hC, C_size * sizeof(float),
-                          cudaMemcpyHostToDevice))
-    struct cudaDeviceProp prop;
-    CHECK_CUDA(cudaGetDeviceProperties(&prop, 0))
-    int sm = prop.major * 10 + prop.minor;
-    //--------------------------------------------------------------------------
-    // CUSPARSE APIs
-    cusparseHandle_t handle = NULL;
-    cusparseSpMatDescr_t matA;
-    cusparseDnMatDescr_t matB, matC;
-    void *dBuffer = NULL;
-    size_t bufferSize = 0;
-    cusparseSpMMOpPlan_t plan;
-    CHECK_CUSPARSE(cusparseCreate(&handle))
-    // Create sparse matrix A in CSR format
-    CHECK_CUSPARSE(cusparseCreateCsr(&matA, A_num_rows, A_num_cols, A_nnz,
-                                     // dA_csrOffsets, dA_columns, dA_values,
-                                     (void *)thrust::raw_pointer_cast(dA.row_offsets.data()),
-                                     (void *)thrust::raw_pointer_cast(dA.column_indices.data()),
-                                     (void *)thrust::raw_pointer_cast(dA.values.data()),
-                                     CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F))
-    // Create dense matrix B
-    CHECK_CUSPARSE(cusparseCreateDnMat(&matB, A_num_cols, B_num_cols, ldb, dB,
-                                       CUDA_R_32F, CUSPARSE_ORDER_ROW))
-    // Create dense matrix C
-    CHECK_CUSPARSE(cusparseCreateDnMat(&matC, A_num_rows, B_num_cols, ldc, dC,
-                                       CUDA_R_32F, CUSPARSE_ORDER_ROW))
-    //--------------------------------------------------------------------------
-    void *nvvm_buffer_add, *nvvm_buffer_mul, *nvvm_buffer_epilogue;
-    size_t nvvm_buffer_add_size, nvvm_buffer_mul_size,
-        nvvm_buffer_epilogue_size;
-    // extra options can be useful for providing cuda header location
-    // (e.g. cuComplex.h)
+  // Device memory management
+  // int   *dA_csrOffsets, *dA_columns;
+  // float *dA_values,
+  float *dB, *dC;
+  // CHECK_CUDA( cudaMalloc((void**) &dA_csrOffsets,
+  //                        (A_num_rows + 1) * sizeof(int)) )
+  // CHECK_CUDA( cudaMalloc((void**) &dA_columns, A_nnz * sizeof(int))    )
+  // CHECK_CUDA( cudaMalloc((void**) &dA_values,  A_nnz * sizeof(float))  )
+  CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
+  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * sizeof(float)))
+
+  // CHECK_CUDA( cudaMemcpy(dA_csrOffsets, hA_csrOffsets,
+  //                        (A_num_rows + 1) * sizeof(int),
+  //                        cudaMemcpyHostToDevice) )
+  // CHECK_CUDA( cudaMemcpy(dA_columns, hA_columns, A_nnz * sizeof(int),
+  //                        cudaMemcpyHostToDevice) )
+  // CHECK_CUDA( cudaMemcpy(dA_values, hA_values, A_nnz * sizeof(float),
+  //                        cudaMemcpyHostToDevice) )
+  CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
+  CHECK_CUDA(cudaMemcpy(dC, hC, C_size * sizeof(float), cudaMemcpyHostToDevice))
+  struct cudaDeviceProp prop;
+  CHECK_CUDA(cudaGetDeviceProperties(&prop, 0))
+  int sm = prop.major * 10 + prop.minor;
+  //--------------------------------------------------------------------------
+  // CUSPARSE APIs
+  cusparseHandle_t handle = NULL;
+  cusparseSpMatDescr_t matA;
+  cusparseDnMatDescr_t matB, matC;
+  void *dBuffer = NULL;
+  size_t bufferSize = 0;
+  cusparseSpMMOpPlan_t plan;
+  CHECK_CUSPARSE(cusparseCreate(&handle))
+  // Create sparse matrix A in CSR format
+  CHECK_CUSPARSE(cusparseCreateCsr(
+      &matA, A_num_rows, A_num_cols, A_nnz,
+      // dA_csrOffsets, dA_columns, dA_values,
+      (void *)thrust::raw_pointer_cast(dA.row_offsets.data()),
+      (void *)thrust::raw_pointer_cast(dA.column_indices.data()),
+      (void *)thrust::raw_pointer_cast(dA.values.data()), CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F))
+  // Create dense matrix B
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matB, A_num_cols, B_num_cols, ldb, dB,
+                                     CUDA_R_32F, CUSPARSE_ORDER_ROW))
+  // Create dense matrix C
+  CHECK_CUSPARSE(cusparseCreateDnMat(&matC, A_num_rows, B_num_cols, ldc, dC,
+                                     CUDA_R_32F, CUSPARSE_ORDER_ROW))
+  //--------------------------------------------------------------------------
+  void *nvvm_buffer_add, *nvvm_buffer_mul, *nvvm_buffer_epilogue;
+  size_t nvvm_buffer_add_size, nvvm_buffer_mul_size, nvvm_buffer_epilogue_size;
+  // extra options can be useful for providing cuda header location
+  // (e.g. cuComplex.h)
 #if defined(_WIN32)
-    const char *options[] = {"-IC:/cuda/include"};
+  const char *options[] = {"-IC:/cuda/include"};
 #else
-    const char *options[] = {"-I/usr/local/cuda/include"};
+  const char *options[] = {"-I/usr/local/cuda/include"};
 #endif
-    nvrtc_compile(sm, AddOp, options, 1,
-                  &nvvm_buffer_add, &nvvm_buffer_add_size);
-    nvrtc_compile(sm, MulOp, options, 1,
-                  &nvvm_buffer_mul, &nvvm_buffer_mul_size);
-    nvrtc_compile(sm, Epilogue, options, 1,
-                  &nvvm_buffer_epilogue, &nvvm_buffer_epilogue_size);
+  nvrtc_compile(sm, AddOp, options, 1, &nvvm_buffer_add, &nvvm_buffer_add_size);
+  nvrtc_compile(sm, MulOp, options, 1, &nvvm_buffer_mul, &nvvm_buffer_mul_size);
+  nvrtc_compile(sm, Epilogue, options, 1, &nvvm_buffer_epilogue,
+                &nvvm_buffer_epilogue_size);
 
-    CHECK_CUSPARSE(
-        cusparseSpMMOp_createPlan(handle, &plan,
-                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                  matA, matB, matC, CUDA_R_32F,
-                                  CUSPARSE_SPMM_OP_ALG_DEFAULT,
-                                  nvvm_buffer_add, nvvm_buffer_add_size,
-                                  nvvm_buffer_mul, nvvm_buffer_mul_size,
-                                  nvvm_buffer_epilogue,
-                                  nvvm_buffer_epilogue_size,
-                                  &bufferSize))
+  CHECK_CUSPARSE(cusparseSpMMOp_createPlan(
+      handle, &plan, CUSPARSE_OPERATION_NON_TRANSPOSE,
+      CUSPARSE_OPERATION_NON_TRANSPOSE, matA, matB, matC, CUDA_R_32F,
+      CUSPARSE_SPMM_OP_ALG_DEFAULT, nvvm_buffer_add, nvvm_buffer_add_size,
+      nvvm_buffer_mul, nvvm_buffer_mul_size, nvvm_buffer_epilogue,
+      nvvm_buffer_epilogue_size, &bufferSize))
 
-    // allocate an external buffer if needed
-    CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
+  // allocate an external buffer if needed
+  CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize))
 
-    // execute SpMM
-    CHECK_CUSPARSE(cusparseSpMMOp(plan, dBuffer))
+  // execute SpMM
+  CHECK_CUSPARSE(cusparseSpMMOp(plan, dBuffer))
 
-    // destroy matrix/vector descriptors
-    CHECK_CUSPARSE(cusparseDestroySpMat(matA))
-    CHECK_CUSPARSE(cusparseDestroyDnMat(matB))
-    CHECK_CUSPARSE(cusparseDestroyDnMat(matC))
-    CHECK_CUSPARSE(cusparseDestroy(handle))
-    //--------------------------------------------------------------------------
-    // device result check
-    // CHECK_CUDA( cudaMemcpy(hC, dC, C_size * sizeof(float),
-    //                        cudaMemcpyDeviceToHost) )
-    // int correct = 1;
-    // for (int i = 0; i < A_num_rows; i++) {
-    //     for (int j = 0; j < B_num_cols; j++) {
-    //         if (hC[i * ldc + j] != hC_result[i * ldc + j]) {
-    //             correct = 0; // direct floating point comparison is not reliable
-    //             break;
-    //         }
-    //     }
-    // }
-    // if (correct)
-    //     printf("spmm_csr_op_example test PASSED\n");
-    // else
-    //     printf("spmm_csr_op_example test FAILED: wrong result\n");
-    //--------------------------------------------------------------------------
-    // host memory deallocation
-    free(nvvm_buffer_add);
-    free(nvvm_buffer_mul);
-    free(nvvm_buffer_epilogue);
-    // device memory deallocation
-    CHECK_CUDA(cudaFree(dBuffer))
-    // CHECK_CUDA( cudaFree(dA_csrOffsets) )
-    // CHECK_CUDA( cudaFree(dA_columns) )
-    // CHECK_CUDA( cudaFree(dA_values) )
-    CHECK_CUDA(cudaFree(dB))
-    CHECK_CUDA(cudaFree(dC))
-    free(hB);
-    free(hC);
-    return EXIT_SUCCESS;
+  // destroy matrix/vector descriptors
+  CHECK_CUSPARSE(cusparseDestroySpMat(matA))
+  CHECK_CUSPARSE(cusparseDestroyDnMat(matB))
+  CHECK_CUSPARSE(cusparseDestroyDnMat(matC))
+  CHECK_CUSPARSE(cusparseDestroy(handle))
+  //--------------------------------------------------------------------------
+  // device result check
+  // CHECK_CUDA( cudaMemcpy(hC, dC, C_size * sizeof(float),
+  //                        cudaMemcpyDeviceToHost) )
+  // int correct = 1;
+  // for (int i = 0; i < A_num_rows; i++) {
+  //     for (int j = 0; j < B_num_cols; j++) {
+  //         if (hC[i * ldc + j] != hC_result[i * ldc + j]) {
+  //             correct = 0; // direct floating point comparison is not
+  //             reliable break;
+  //         }
+  //     }
+  // }
+  // if (correct)
+  //     printf("spmm_csr_op_example test PASSED\n");
+  // else
+  //     printf("spmm_csr_op_example test FAILED: wrong result\n");
+  //--------------------------------------------------------------------------
+  // host memory deallocation
+  free(nvvm_buffer_add);
+  free(nvvm_buffer_mul);
+  free(nvvm_buffer_epilogue);
+  // device memory deallocation
+  CHECK_CUDA(cudaFree(dBuffer))
+  // CHECK_CUDA( cudaFree(dA_csrOffsets) )
+  // CHECK_CUDA( cudaFree(dA_columns) )
+  // CHECK_CUDA( cudaFree(dA_values) )
+  CHECK_CUDA(cudaFree(dB))
+  CHECK_CUDA(cudaFree(dC))
+  free(hB);
+  free(hC);
+  return EXIT_SUCCESS;
 }

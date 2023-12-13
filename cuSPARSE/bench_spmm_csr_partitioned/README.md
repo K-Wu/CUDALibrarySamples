@@ -46,7 +46,7 @@ This sample demonstrates the usage of `cusparseSpMM` for performing *sparse matr
 Running the code with `--test_API_on_stream` enabled and disable the computation logic, we obtain the folloing output, suggesting the cusparse environment and data handle creation APIs are blocking on the host side.
 
 ```
-❯ ./bench_spmm_csr_partitioned --A_num_rows=128 --A_num_cols=256 --B_num_cols=256 --AA_num_rows=16 --AA_num_cols=64 --BB_num_cols=64 --A_sparsity=0.1 --test_API_on_stream
+❯ ./bench_spmm_csr_partitioned --A_num_rows=128 --A_num_cols=256 --B_num_cols=256 --AA_num_rows=16 --AA_num_cols=64 --BB_num_cols=64 --A_density=0.1 --test_API_on_stream
 This is to test if cusparse environment and matrix handle creation APIs are on any stream or not. There are three possibilities 1) the API is blocking, 2) the API is on default stream, and 3) the API is on the specified stream set by cusparseSetStream. We can use two events to check if either 2) or 3) is true. We use C++ chrono to check if 1) is true.
 A_num_rows: 128
 A_num_cols: 256
@@ -54,7 +54,7 @@ B_num_cols: 256
 AA_num_rows: 16
 AA_num_cols: 64
 BB_num_cols: 64
-A_sparsity: 0.100000
+A_density: 0.100000
 actual A_nnz due to deduplication during random data generation: 3114
 [DEBUG] cusparseSpMM+CSR handle creation chrono time (microseconds): 212168
 [DEBUG] cusparseSpMM+CSR data handle and buffer creation chrono time (microseconds): 340

@@ -95,7 +95,7 @@ struct BenchSpmmCSRProblemSpec {
   int A_num_rows;
   int A_num_cols;
   int B_num_cols;
-  float A_sparsity;
+  float A_density;
   bool enable_dump;
   bool enable_timing;
   bool enable_debug_timing;
@@ -128,7 +128,7 @@ struct BenchSpmmCSRRuntimeData {
 void print_spmm_csr_usage() {
   printf(
       "Usage: bench_spmm_csr --A_num_rows=## --A_num_cols=## --B_num_cols=## "
-      "--A_sparsity=0.## [--enable_dump] [--result_path_and_prefix=...] "
+      "--A_density=0.## [--enable_dump] [--result_path_and_prefix=...] "
       "[--enable_timing] [--enable_debug_timing]\n");
   // TODO: print the meaning of each argument
 }
@@ -142,7 +142,7 @@ generate_data_and_prepare_bench_spmm_csr(
   int A_num_rows = getCmdLineArgumentInt(argc, argv, "A_num_rows");
   int A_num_cols = getCmdLineArgumentInt(argc, argv, "A_num_cols");
   int B_num_cols = getCmdLineArgumentInt(argc, argv, "B_num_cols");
-  float A_sparsity = getCmdLineArgumentFloat(argc, argv, "A_sparsity");
+  float A_density = getCmdLineArgumentFloat(argc, argv, "A_density");
   bool enable_dump = checkCmdLineFlag(argc, argv, "enable_dump");
   bool enable_timing = checkCmdLineFlag(argc, argv, "enable_timing");
   bool enable_preprocess = checkCmdLineFlag(argc, argv, "enable_preprocess");
@@ -152,17 +152,17 @@ generate_data_and_prepare_bench_spmm_csr(
   bool flag_specify_result_path_and_prefix = getCmdLineArgumentString(
       argc, argv, "result_path_and_prefix", &cli_result_path_and_prefix);
   if (A_num_rows == 0 || A_num_cols == 0 || B_num_cols == 0 ||
-      A_sparsity == 0.0f) {
+      A_density == 0.0f) {
     print_spmm_csr_usage();
     exit(EXIT_FAILURE);
   }
   printf("A_num_rows: %d\n", A_num_rows);
   printf("A_num_cols: %d\n", A_num_cols);
   printf("B_num_cols: %d\n", B_num_cols);
-  printf("A_sparsity: %f\n", A_sparsity);
+  printf("A_density: %f\n", A_density);
 
   // ***** END OF HOST PROBLEM DEFINITION *****
-  int A_nnz = A_num_rows * A_num_cols * A_sparsity;
+  int A_nnz = A_num_rows * A_num_cols * A_density;
   int B_num_rows = A_num_cols;
   int ldb = B_num_rows;
   int ldc = A_num_rows;
@@ -310,7 +310,7 @@ generate_data_and_prepare_bench_spmm_csr(
       .A_num_rows = A_num_rows,
       .A_num_cols = A_num_cols,
       .B_num_cols = B_num_cols,
-      .A_sparsity = A_sparsity,
+      .A_density = A_density,
       .enable_dump = enable_dump,
       .enable_timing = enable_timing,
       .enable_debug_timing = enable_debug_timing,
@@ -434,7 +434,7 @@ void cleanup_bench_spmm_csr(BenchSpmmCSRProblemSpec &problem_spec,
     assert(fp != nullptr);
     fprintf(fp, "%d %d %d %d %f\n", problem_spec.A_num_rows,
             problem_spec.A_num_cols, problem_spec.B_num_cols,
-            runtime_data.A_nnz, problem_spec.A_sparsity);
+            runtime_data.A_nnz, problem_spec.A_density);
     fclose(fp);
     cusp::io::write_matrix_market_file(runtime_data.hA,
                                        result_path_and_prefix + ".A.mtx");
