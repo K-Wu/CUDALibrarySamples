@@ -970,7 +970,7 @@ int main(const int argc, const char **argv) {
   }
 
   // Still needs to destroy graphExec though graph will be destroyed by
-  // cudaGraphWrapper destructor
+  // CudaGraphWrapper destructor
   if (bench_spec.enable_graph) {
     CUDA_CHECK(cudaGraphExecDestroy(bench_data.graphExecs[0]));
   }
