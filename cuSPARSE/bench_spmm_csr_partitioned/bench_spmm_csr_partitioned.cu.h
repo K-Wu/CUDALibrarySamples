@@ -394,10 +394,12 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
     CHECK_CUDA(cudaEventRecord(data_copy_start, streams.front()));
   }
   CHECK_CUDA(cudaMalloc((void **)&dB, B_size * sizeof(float)))
-  CHECK_CUDA(cudaMalloc((void **)&dC, C_size * (1 + 1) * sizeof(float)))
+  CHECK_CUDA(cudaMalloc(
+      (void **)&dC, C_size * (A_num_cols / AA_num_cols + 1) * sizeof(float)))
 
   CHECK_CUDA(cudaMemcpy(dB, hB, B_size * sizeof(float), cudaMemcpyHostToDevice))
-  CHECK_CUDA(cudaMemset(dC, 0, C_size * (1 + 1) * sizeof(float)))
+  CHECK_CUDA(cudaMemset(
+      dC, 0, C_size * (A_num_cols / AA_num_cols + 1) * sizeof(float)))
   if (enable_timing) {
     CHECK_CUDA(cudaEventRecord(data_copy_stop, streams.front()));
     timing_results.utility_timestamps["data_copy"] =
@@ -491,16 +493,17 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
               CUDA_R_32F, CUSPARSE_ORDER_COL))
           runtime_data->matBB.push_back(curr_matBB);
         }
-        if (AA_col_idx == 0) {
-          // Create dense matrix C
-          cusparseDnMatDescr_t curr_matCC;
-          CHECK_CUSPARSE(
-              cusparseCreateDnMat(&curr_matCC, AA_num_rows, BB_num_cols, ldc,
-                                  dC + AA_row_idx * AA_num_rows +
-                                      BB_col_idx * BB_num_cols * AA_num_rows,
-                                  CUDA_R_32F, CUSPARSE_ORDER_COL))
-          runtime_data->matCC.push_back(curr_matCC);
-        }
+        // if (AA_col_idx == 0) {
+        // Create dense matrix C
+        cusparseDnMatDescr_t curr_matCC;
+        CHECK_CUSPARSE(
+            cusparseCreateDnMat(&curr_matCC, AA_num_rows, BB_num_cols, ldc,
+                                dC + AA_col_idx * A_num_rows * B_num_cols +
+                                    AA_row_idx * AA_num_rows +
+                                    BB_col_idx * BB_num_cols * AA_num_rows,
+                                CUDA_R_32F, CUSPARSE_ORDER_COL))
+        runtime_data->matCC.push_back(curr_matCC);
+        //}
       }
     }
   }
@@ -510,9 +513,13 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
          AA_col_idx++) {
       for (int AA_row_idx = 0; AA_row_idx < A_num_rows / AA_num_rows;
            AA_row_idx++) {
+        auto [idx_spmm, num_spmms] = canonicalize_loop_index_and_bound(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {B_num_cols / BB_num_cols, A_num_cols / AA_num_cols,
+             A_num_rows / AA_num_rows});
         int idx_AA = AA_row_idx + AA_col_idx * A_num_rows / AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * A_num_cols / AA_num_cols;
-        int idx_CC = AA_row_idx + BB_col_idx * A_num_rows / AA_num_rows;
+        // int idx_CC = AA_row_idx + BB_col_idx * A_num_rows / AA_num_rows;
         size_t curr_bufferSize;
         void *curr_dBuffer;
         int idx_stream =
@@ -525,8 +532,8 @@ std::tuple<ProblemSpec, std::shared_ptr<RuntimeData>> generate_data_and_prepare(
             handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(alpha),
             runtime_data->matAA[idx_AA], runtime_data->matBB[idx_BB], &(beta),
-            runtime_data->matCC[idx_CC], CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
-            &curr_bufferSize))
+            runtime_data->matCC[idx_spmm], CUDA_R_32F,
+            CUSPARSE_SPMM_ALG_DEFAULT, &curr_bufferSize))
         // TODO: switch to memcpy async
         CHECK_CUDA(cudaMalloc(&curr_dBuffer, curr_bufferSize))
         runtime_data->dBuffers.push_back(curr_dBuffer);
@@ -629,14 +636,14 @@ void preprocess(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
                                       problem_spec.AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
                                       problem_spec.AA_num_cols;
-        int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
-                                      problem_spec.AA_num_rows;
+        // int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
+        //                               problem_spec.AA_num_rows;
 
         CHECK_CUSPARSE(cusparseSpMM_preprocess(
             runtime_data.handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
             runtime_data.matAA[idx_AA], runtime_data.matBB[idx_BB],
-            &(runtime_data.beta), runtime_data.matCC[idx_CC], CUDA_R_32F,
+            &(runtime_data.beta), runtime_data.matCC[idx_spmm], CUDA_R_32F,
             CUSPARSE_SPMM_ALG_DEFAULT, runtime_data.dBuffers[idx_spmm]))
 
         // idx_spmm++;
@@ -737,14 +744,14 @@ void _compute_reference(ProblemSpec &problem_spec, RuntimeData &runtime_data,
                                       problem_spec.AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
                                       problem_spec.AA_num_cols;
-        int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
-                                      problem_spec.AA_num_rows;
+        // int idx_CC = AA_row_idx + BB_col_idx * problem_spec.A_num_rows /
+        //                               problem_spec.AA_num_rows;
 
         CHECK_CUSPARSE(cusparseSpMM(
             runtime_data.handles[idx_stream], CUSPARSE_OPERATION_NON_TRANSPOSE,
             CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
             runtime_data.matAA[idx_AA], runtime_data.matBB[idx_BB],
-            &(runtime_data.beta), runtime_data.matCC[idx_CC], CUDA_R_32F,
+            &(runtime_data.beta), runtime_data.matCC[idx_spmm], CUDA_R_32F,
             CUSPARSE_SPMM_ALG_DEFAULT, runtime_data.dBuffers[idx_spmm]))
 
         // idx_spmm++;
@@ -773,10 +780,11 @@ void _compute_reference(ProblemSpec &problem_spec, RuntimeData &runtime_data,
       <<<nblocks, nthreads, 0, runtime_data.streams.front()>>>(
           runtime_data.dC,
           runtime_data.dC + problem_spec.A_num_cols / problem_spec.AA_num_cols *
-                                problem_spec.AA_num_rows *
-                                problem_spec.BB_num_cols,
+                                problem_spec.A_num_rows *
+                                problem_spec.B_num_cols,
           problem_spec.AA_num_rows, problem_spec.AA_num_rows,
-          problem_spec.BB_num_cols,
+          problem_spec.BB_num_cols, problem_spec.A_num_rows,
+          problem_spec.A_num_rows,
           problem_spec.A_num_cols / problem_spec.AA_num_cols);
 
   if (problem_spec.enable_timing) {
@@ -998,7 +1006,8 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
                                 problem_spec.AA_num_rows *
                                 problem_spec.BB_num_cols,
           problem_spec.AA_num_rows, problem_spec.AA_num_rows,
-          problem_spec.BB_num_cols,
+          problem_spec.BB_num_cols, problem_spec.A_num_rows,
+          problem_spec.A_num_rows,
           problem_spec.A_num_cols / problem_spec.AA_num_cols);
   graph_constructor.notifyAfterInvokingLibraryCall(runtime_data.streams[0]);
 

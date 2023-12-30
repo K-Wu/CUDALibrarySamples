@@ -265,12 +265,12 @@ std::tuple<ProblemSpec, RuntimeData> generate_data_and_prepare(
                         sizeof(data_type) * A.size()));
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B),
                         sizeof(data_type) * B.size()));
-  CUDA_CHECK(
-      cudaMalloc(reinterpret_cast<void **>(&d_C),
-                 sizeof(data_type) * C.size() *
-                     (1 + 1)));  // Need k times the size to store output of the
-                                 // partitioned kernels and 1 original size to
-                                 // store the final accumulated results
+  CUDA_CHECK(cudaMalloc(
+      reinterpret_cast<void **>(&d_C),
+      sizeof(data_type) * C.size() *
+          (k / kk + 1)));  // Need k times the size to store output of the
+                           // partitioned kernels and 1 original size to
+                           // store the final accumulated results
 
   CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(data_type) * A.size(),
                              cudaMemcpyHostToDevice, streams.front()));
@@ -408,7 +408,7 @@ void _compute_reference(ProblemSpec &bench_spec, RuntimeData &bench_data,
             bench_data.d_A + i * bench_spec.mm + l * bench_spec.kk * lda, lda,
             bench_data.d_B + l * bench_spec.kk + j * bench_spec.nn * ldb, ldb,
             &(bench_data.beta),
-            bench_data.d_C + l * bench_spec.mm * bench_spec.nn +
+            bench_data.d_C + l * bench_spec.m * bench_spec.n +
                 i * bench_spec.mm + j * bench_spec.nn * ldc,
             ldc));
       }
@@ -435,9 +435,9 @@ void _compute_reference(ProblemSpec &bench_spec, RuntimeData &bench_data,
       <<<nblocks, nthreads, 0, bench_data.streams.front()>>>(
           bench_data.d_C,
           bench_data.d_C +
-              bench_spec.k / bench_spec.kk * bench_spec.mm * bench_spec.nn,
-          bench_spec.mm, bench_spec.mm, bench_spec.nn,
-          bench_spec.k / bench_spec.kk);
+              bench_spec.k / bench_spec.kk * bench_spec.m * bench_spec.n,
+          bench_spec.mm, bench_spec.mm, bench_spec.nn, bench_spec.m,
+          bench_spec.m, bench_spec.k / bench_spec.kk);
 
   if (bench_spec.enable_timing) {
     CUDA_CHECK(cudaEventRecord(stops_per_stream[0], bench_data.streams[0]));
@@ -623,8 +623,8 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
           bench_data.d_C,
           bench_data.d_C +
               bench_spec.k / bench_spec.kk * bench_spec.mm * bench_spec.nn,
-          bench_spec.mm, bench_spec.mm, bench_spec.nn,
-          bench_spec.k / bench_spec.kk);
+          bench_spec.mm, bench_spec.mm, bench_spec.nn, bench_spec.mm,
+          bench_spec.mm, bench_spec.k / bench_spec.kk);
   graph_constructor.notifyAfterInvokingLibraryCall(bench_data.streams.back());
 
   if (bench_spec.enable_timing) {
