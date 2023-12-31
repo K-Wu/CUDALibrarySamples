@@ -344,8 +344,6 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
     CHECK_CUDA(cudaDeviceSynchronize());
     beg = std::chrono::system_clock::now();
   }
-  if (problem_spec.enable_timing)
-    CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
 
   if (problem_spec.enable_preprocess)
     CHECK_CUSPARSE(cusparseSpMM_preprocess(
@@ -354,6 +352,10 @@ std::tuple<cudaEvent_t, cudaEvent_t> compute_bench_spmm_csr(
         runtime_data.matA, runtime_data.matB, &(runtime_data.beta),
         runtime_data.matC, CUDA_R_32F, CUSPARSE_SPMM_ALG_DEFAULT,
         runtime_data.dBuffer));
+
+  if (problem_spec.enable_timing)
+    CHECK_CUDA(cudaEventRecord(start, runtime_data.stream));
+
   CHECK_CUSPARSE(
       cusparseSpMM(runtime_data.handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
                    CUSPARSE_OPERATION_NON_TRANSPOSE, &(runtime_data.alpha),
