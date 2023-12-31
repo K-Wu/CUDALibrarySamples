@@ -401,6 +401,17 @@ void _compute_reference(ProblemSpec &bench_spec, RuntimeData &bench_data,
             {bench_spec.m / bench_spec.mm, bench_spec.n / bench_spec.nn,
              bench_spec.k / bench_spec.kk},
             bench_data.streams.size());
+        int last_stream_idx = getCurrStream(
+            get_last_loop_index({i, j, l}, {bench_spec.m / bench_spec.mm,
+                                            bench_spec.n / bench_spec.nn,
+                                            bench_spec.k / bench_spec.kk}),
+            {bench_spec.m / bench_spec.mm, bench_spec.n / bench_spec.nn,
+             bench_spec.k / bench_spec.kk},
+            bench_data.streams.size());
+        if (curr_stream_idx != last_stream_idx) {
+          CUBLAS_CHECK(cublasSetStream(bench_data.cublasHs[curr_stream_idx],
+                                       bench_data.streams[curr_stream_idx]));
+        }
         CUBLAS_CHECK(cublasSgemm(
             bench_data.cublasHs[curr_stream_idx], bench_data.transa,
             bench_data.transb, bench_spec.mm, bench_spec.nn, bench_spec.kk,
@@ -582,6 +593,10 @@ void compute(ProblemSpec &bench_spec, RuntimeData &bench_data,
               bench_data.streams[last_stream_idx]);
           graph_constructor.notifyBeforeInvokingLibraryCall(
               bench_data.streams[curr_stream_idx]);
+        }
+        if (curr_stream_idx != last_stream_idx) {
+          CUBLAS_CHECK(cublasSetStream(bench_data.cublasHs[curr_stream_idx],
+                                       bench_data.streams[curr_stream_idx]));
         }
         CUBLAS_CHECK(cublasSgemm(
             bench_data.cublasHs[curr_stream_idx], bench_data.transa,

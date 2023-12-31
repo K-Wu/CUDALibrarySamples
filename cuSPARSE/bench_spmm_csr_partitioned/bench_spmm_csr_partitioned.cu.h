@@ -632,6 +632,21 @@ void preprocess(ProblemSpec &problem_spec, RuntimeData &runtime_data) {
                            problem_spec.A_num_cols / problem_spec.AA_num_cols,
                            problem_spec.A_num_rows / problem_spec.AA_num_rows},
                           problem_spec.nstreams);
+        std::vector<int> last_loop_idxes = get_last_loop_index(
+            {BB_col_idx, AA_col_idx, AA_row_idx},
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows});
+        int last_stream_idx =
+            getCurrStream(last_loop_idxes,
+                          {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                           problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                           problem_spec.A_num_rows / problem_spec.AA_num_rows},
+                          runtime_data.streams.size());
+        if (last_stream_idx != idx_stream) {
+          CHECK_CUSPARSE(cusparseSetStream(runtime_data.handles[idx_stream],
+                                           runtime_data.streams[idx_stream]));
+        }
         int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
@@ -740,6 +755,20 @@ void _compute_reference(ProblemSpec &problem_spec, RuntimeData &runtime_data,
                            problem_spec.A_num_cols / problem_spec.AA_num_cols,
                            problem_spec.A_num_rows / problem_spec.AA_num_rows},
                           problem_spec.nstreams);
+        int idx_last_stream = getCurrStream(
+            get_last_loop_index(
+                {BB_col_idx, AA_col_idx, AA_row_idx},
+                {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+                 problem_spec.A_num_cols / problem_spec.AA_num_cols,
+                 problem_spec.A_num_rows / problem_spec.AA_num_rows}),
+            {problem_spec.B_num_cols / problem_spec.BB_num_cols,
+             problem_spec.A_num_cols / problem_spec.AA_num_cols,
+             problem_spec.A_num_rows / problem_spec.AA_num_rows},
+            problem_spec.nstreams);
+        if (idx_last_stream != idx_stream) {
+          CHECK_CUSPARSE(cusparseSetStream(runtime_data.handles[idx_stream],
+                                           runtime_data.streams[idx_stream]));
+        }
         int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
         int idx_BB = AA_col_idx + BB_col_idx * problem_spec.A_num_cols /
@@ -956,6 +985,11 @@ void compute(ProblemSpec &problem_spec, RuntimeData &runtime_data,
               runtime_data.streams[last_stream_idx]);
           graph_constructor.notifyBeforeInvokingLibraryCall(
               runtime_data.streams[curr_stream_idx]);
+        }
+        if (last_stream_idx != curr_stream_idx) {
+          CHECK_CUSPARSE(
+              cusparseSetStream(runtime_data.handles[curr_stream_idx],
+                                runtime_data.streams[curr_stream_idx]));
         }
         int idx_AA = AA_row_idx + AA_col_idx * problem_spec.A_num_rows /
                                       problem_spec.AA_num_rows;
